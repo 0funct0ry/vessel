@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/0funct0ry/vessel/internal/api"
+	"github.com/0funct0ry/vessel/internal/dockerapi"
 	"github.com/0funct0ry/vessel/internal/version"
 )
 
@@ -67,10 +68,18 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err := GuardBind(cfg.Addr, cfg.Auth, cfg.Override); err != nil {
 		return err
 	}
+	dockerClient, err := dockerapi.New(cfg.DockerHost)
+	if err != nil {
+		return fmt.Errorf("create Docker client: %w", err)
+	}
 
 	printBanner(cfg)
 
-	router := api.NewRouter()
+	router := api.NewRouter(api.Config{
+		Docker:   dockerClient,
+		ReadOnly: cfg.ReadOnly,
+		BasePath: cfg.BasePath,
+	})
 	srv := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", cfg.Addr, cfg.Port),
 		Handler: router,

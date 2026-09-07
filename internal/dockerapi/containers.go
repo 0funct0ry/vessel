@@ -22,12 +22,14 @@ type Container struct {
 	ID      string            `json:"Id"`
 	Names   []string          `json:"Names"`
 	Image   string            `json:"Image"`
+	ImageID string            `json:"ImageID"`
 	Command string            `json:"Command"`
 	Created int64             `json:"Created"`
 	State   string            `json:"State"`
 	Status  string            `json:"Status"`
 	Ports   []Port            `json:"Ports"`
 	Labels  map[string]string `json:"Labels"`
+	Mounts  []ContainerMount  `json:"Mounts"`
 }
 
 // ListContainersOptions controls GET /containers/json.
