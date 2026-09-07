@@ -50,6 +50,37 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) (*htt
 }
 
 func (c *Client) doOnce(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
+	return c.doOnceWithClient(ctx, method, path, body, c.httpClient)
+}
+
+// doStream uses the same error and API-version negotiation semantics as do,
+// without the normal request deadline. Streams are governed by their context;
+// a large image pull must not be cut off by the non-streaming 30s timeout.
+func (c *Client) doStream(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
+	client := *c.httpClient
+	client.Timeout = 0
+	resp, err := c.doOnceWithClient(ctx, method, path, body, &client)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusBadRequest {
+		peek, rerr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if rerr == nil && tooNewVersionRE.Match(peek) {
+			if err := c.negotiateVersion(ctx); err != nil {
+				return nil, err
+			}
+			return c.doOnceWithClient(ctx, method, path, body, &client)
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(peek))
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, mapError(resp)
+	}
+	return resp, nil
+}
+
+func (c *Client) doOnceWithClient(ctx context.Context, method, path string, body []byte, client *http.Client) (*http.Response, error) {
 	var reqBody io.Reader
 	if body != nil {
 		reqBody = bytes.NewReader(body)
@@ -63,7 +94,7 @@ func (c *Client) doOnce(ctx context.Context, method, path string, body []byte) (
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnreachable, err)
 	}

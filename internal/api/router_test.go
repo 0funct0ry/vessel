@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -32,6 +33,8 @@ type fakeDockerClient struct {
 	err            error
 	panicList      bool
 	containerCalls []dockerapi.ListContainersOptions
+	pull           dockerapi.PullStream
+	prune          *dockerapi.PruneReport
 }
 
 func newFakeDockerClient() *fakeDockerClient {
@@ -97,6 +100,31 @@ func (f *fakeDockerClient) ListNetworks(context.Context) ([]dockerapi.Network, e
 
 func (f *fakeDockerClient) InspectNetwork(context.Context, string) (*dockerapi.Network, error) {
 	return f.network, f.err
+}
+
+func (f *fakeDockerClient) Lifecycle(context.Context, string, string, url.Values) error { return f.err }
+func (f *fakeDockerClient) RenameContainer(context.Context, string, string) error       { return f.err }
+func (f *fakeDockerClient) RemoveContainer(context.Context, string, dockerapi.RemoveContainerOptions) error {
+	return f.err
+}
+func (f *fakeDockerClient) PullImage(context.Context, string) (dockerapi.PullStream, error) {
+	return f.pull, f.err
+}
+func (f *fakeDockerClient) TagImage(context.Context, string, string, string) error { return f.err }
+func (f *fakeDockerClient) RemoveImage(context.Context, string, dockerapi.RemoveImageOptions) error {
+	return f.err
+}
+func (f *fakeDockerClient) CreateVolume(context.Context, dockerapi.CreateVolumeOptions) (*dockerapi.Volume, error) {
+	return f.volume, f.err
+}
+func (f *fakeDockerClient) RemoveVolume(context.Context, string, bool) error { return f.err }
+func (f *fakeDockerClient) CreateNetwork(context.Context, dockerapi.CreateNetworkOptions) (*dockerapi.Network, error) {
+	return f.network, f.err
+}
+func (f *fakeDockerClient) RemoveNetwork(context.Context, string) error                { return f.err }
+func (f *fakeDockerClient) NetworkConnect(context.Context, string, string, bool) error { return f.err }
+func (f *fakeDockerClient) Prune(context.Context, string) (*dockerapi.PruneReport, error) {
+	return f.prune, f.err
 }
 
 func performRequest(router http.Handler, method, target string) *httptest.ResponseRecorder {
@@ -380,7 +408,7 @@ func TestErrorMapping(t *testing.T) {
 	}{
 		{"resource not found", fmt.Errorf("%w: daemon detail", dockerapi.ErrNotFound), "/api/v1/containers/missing", 404, `{"error":{"code":"container_not_found","message":"no such container: missing","docker_status":404}}`},
 		{"unreachable", fmt.Errorf("%w: socket", dockerapi.ErrUnreachable), "/api/v1/containers", 503, `{"error":{"code":"docker_unreachable","message":"Docker Engine is unreachable"}}`},
-		{"conflict", fmt.Errorf("%w: already running", dockerapi.ErrConflict), "/api/v1/containers", 409, `{"error":{"code":"docker_conflict","message":"already running","docker_status":409}}`},
+		{"conflict", fmt.Errorf("%w: already running", dockerapi.ErrConflict), "/api/v1/containers", 409, `{"error":{"code":"already_in_state","message":"already running","docker_status":409}}`},
 		{"Docker API", &dockerapi.APIError{Status: 500, Message: "daemon failed"}, "/api/v1/containers", 500, `{"error":{"code":"docker_error","message":"daemon failed","docker_status":500}}`},
 		{"internal", errors.New("secret detail"), "/api/v1/containers", 500, `{"error":{"code":"internal_error","message":"internal server error"}}`},
 	}

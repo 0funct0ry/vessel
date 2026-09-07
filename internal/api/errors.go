@@ -25,6 +25,16 @@ type queryError struct {
 	message string
 }
 
+type validationError struct{ code, message string }
+
+func (e *validationError) Error() string { return e.message }
+func invalidInput(format string, args ...any) error {
+	return &validationError{code: "invalid_request", message: fmt.Sprintf(format, args...)}
+}
+func invalidName(format string, args ...any) error {
+	return &validationError{code: "invalid_name", message: fmt.Sprintf(format, args...)}
+}
+
 func (e *queryError) Error() string { return e.message }
 
 func invalidQuery(format string, args ...any) error {
@@ -54,12 +64,16 @@ func Fail(c *gin.Context, err error) {
 	body := errorBody{Code: "internal_error", Message: "internal server error"}
 
 	var qerr *queryError
+	var verr *validationError
 	var rerr *resourceError
 	var apiErr *dockerapi.APIError
 	switch {
 	case errors.As(err, &qerr):
 		status = http.StatusBadRequest
 		body = errorBody{Code: "invalid_query", Message: qerr.message}
+	case errors.As(err, &verr):
+		status = http.StatusBadRequest
+		body = errorBody{Code: verr.code, Message: verr.message}
 	case errors.Is(err, dockerapi.ErrUnreachable):
 		status = http.StatusServiceUnavailable
 		body = errorBody{Code: "docker_unreachable", Message: "Docker Engine is unreachable"}
@@ -75,7 +89,7 @@ func Fail(c *gin.Context, err error) {
 		}
 	case errors.Is(err, dockerapi.ErrConflict):
 		status = http.StatusConflict
-		body = errorBody{Code: "docker_conflict", Message: dockerMessage(err), DockerStatus: http.StatusConflict}
+		body = errorBody{Code: "already_in_state", Message: dockerMessage(err), DockerStatus: http.StatusConflict}
 	case errors.Is(err, dockerapi.ErrNotModified):
 		c.Status(http.StatusNotModified)
 		return

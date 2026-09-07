@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"net/url"
 
 	"github.com/0funct0ry/vessel/internal/dockerapi"
 )
@@ -21,4 +22,16 @@ type DockerClient interface {
 	InspectVolume(context.Context, string) (*dockerapi.Volume, error)
 	ListNetworks(context.Context) ([]dockerapi.Network, error)
 	InspectNetwork(context.Context, string) (*dockerapi.Network, error)
+	Lifecycle(context.Context, string, string, url.Values) error
+	RenameContainer(context.Context, string, string) error
+	RemoveContainer(context.Context, string, dockerapi.RemoveContainerOptions) error
+	PullImage(context.Context, string) (dockerapi.PullStream, error)
+	TagImage(context.Context, string, string, string) error
+	RemoveImage(context.Context, string, dockerapi.RemoveImageOptions) error
+	CreateVolume(context.Context, dockerapi.CreateVolumeOptions) (*dockerapi.Volume, error)
+	RemoveVolume(context.Context, string, bool) error
+	CreateNetwork(context.Context, dockerapi.CreateNetworkOptions) (*dockerapi.Network, error)
+	RemoveNetwork(context.Context, string) error
+	NetworkConnect(context.Context, string, string, bool) error
+	Prune(context.Context, string) (*dockerapi.PruneReport, error)
 }
