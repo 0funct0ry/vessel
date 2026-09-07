@@ -15,6 +15,7 @@ type DockerClient interface {
 	DiskUsage(context.Context) (*dockerapi.DiskUsageInfo, error)
 	ListContainers(context.Context, dockerapi.ListContainersOptions) ([]dockerapi.Container, error)
 	InspectContainer(context.Context, string) (*dockerapi.ContainerDetail, error)
+	LogStream(context.Context, string, dockerapi.LogsOptions) (dockerapi.LogStream, error)
 	Top(context.Context, string, string) (*dockerapi.TopEntry, error)
 	ListImages(context.Context, bool) ([]dockerapi.Image, error)
 	InspectImage(context.Context, string) (*dockerapi.ImageDetail, error)

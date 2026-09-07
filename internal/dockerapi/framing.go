@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -44,9 +45,17 @@ type LogsOptions struct {
 // loop until it returns io.EOF (or another error); Close releases the
 // underlying HTTP response.
 type LogReader struct {
-	body io.ReadCloser
-	br   *bufio.Reader
-	tty  bool
+	body       io.ReadCloser
+	br         *bufio.Reader
+	tty        bool
+	timestamps bool
+}
+
+// LogStream is the portion of a log reader needed by API consumers. Keeping
+// this interface here lets the HTTP layer use a fake stream without a daemon.
+type LogStream interface {
+	Next() (LogLine, error)
+	Close() error
 }
 
 // Close releases the underlying HTTP connection.
@@ -74,7 +83,7 @@ func (r *LogReader) nextTTYLine() (LogLine, error) {
 	if err != nil && line == "" {
 		return LogLine{}, err
 	}
-	return LogLine{Stream: StreamStdout, Text: trimNewline(line)}, nil
+	return r.logLine(StreamStdout, trimNewline(line))
 }
 
 func (r *LogReader) nextFramedLine() (LogLine, error) {
@@ -91,7 +100,24 @@ func (r *LogReader) nextFramedLine() (LogLine, error) {
 		return LogLine{}, fmt.Errorf("dockerapi: reading log frame payload: %w", err)
 	}
 
-	return LogLine{Stream: streamType, Text: trimNewline(string(payload))}, nil
+	return r.logLine(streamType, trimNewline(string(payload)))
+}
+
+func (r *LogReader) logLine(stream StreamType, text string) (LogLine, error) {
+	line := LogLine{Stream: stream, Text: text}
+	if !r.timestamps {
+		return line, nil
+	}
+	rawTime, text, ok := strings.Cut(text, " ")
+	if !ok {
+		return LogLine{}, fmt.Errorf("dockerapi: parsing log timestamp: missing timestamp prefix")
+	}
+	ts, err := time.Parse(time.RFC3339Nano, rawTime)
+	if err != nil {
+		return LogLine{}, fmt.Errorf("dockerapi: parsing log timestamp: %w", err)
+	}
+	line.Time, line.Text = ts, text
+	return line, nil
 }
 
 func trimNewline(s string) string {
@@ -101,7 +127,7 @@ func trimNewline(s string) string {
 // LogStream calls GET /containers/{id}/logs and returns a LogReader over the
 // response body. The caller must call Close when done (or on context
 // cancellation, which aborts the underlying HTTP request).
-func (c *Client) LogStream(ctx context.Context, id string, opts LogsOptions) (*LogReader, error) {
+func (c *Client) LogStream(ctx context.Context, id string, opts LogsOptions) (LogStream, error) {
 	q := url.Values{}
 	if opts.Follow {
 		q.Set("follow", "1")
@@ -145,5 +171,5 @@ func (c *Client) LogStream(ctx context.Context, id string, opts LogsOptions) (*L
 	// (application/vnd.docker.multiplexed-stream, or absent) is framed.
 	tty := resp.Header.Get("Content-Type") == "application/vnd.docker.raw-stream"
 
-	return &LogReader{body: resp.Body, br: bufio.NewReader(resp.Body), tty: tty}, nil
+	return &LogReader{body: resp.Body, br: bufio.NewReader(resp.Body), tty: tty, timestamps: opts.Timestamps}, nil
 }

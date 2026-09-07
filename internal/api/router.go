@@ -44,6 +44,7 @@ func NewRouter(cfg Config) *gin.Engine {
 	v1.GET("/host", s.handleHost)
 	v1.GET("/containers", s.handleContainers)
 	v1.GET("/containers/:id", s.handleContainer)
+	v1.GET("/containers/:id/logs", s.handleContainerLogs)
 	v1.GET("/containers/:id/top", s.handleContainerTop)
 	v1.POST("/containers/:id/:action", s.handleContainerLifecycle)
 	v1.DELETE("/containers/:id", s.handleContainerRemove)

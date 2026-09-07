@@ -34,6 +34,8 @@ type fakeDockerClient struct {
 	panicList      bool
 	containerCalls []dockerapi.ListContainersOptions
 	pull           dockerapi.PullStream
+	logs           dockerapi.LogStream
+	logCalls       []dockerapi.LogsOptions
 	prune          *dockerapi.PruneReport
 }
 
@@ -72,6 +74,11 @@ func (f *fakeDockerClient) ListContainers(_ context.Context, opts dockerapi.List
 
 func (f *fakeDockerClient) InspectContainer(context.Context, string) (*dockerapi.ContainerDetail, error) {
 	return f.container, f.err
+}
+
+func (f *fakeDockerClient) LogStream(_ context.Context, _ string, opts dockerapi.LogsOptions) (dockerapi.LogStream, error) {
+	f.logCalls = append(f.logCalls, opts)
+	return f.logs, f.err
 }
 
 func (f *fakeDockerClient) Top(context.Context, string, string) (*dockerapi.TopEntry, error) {

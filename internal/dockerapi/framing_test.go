@@ -130,3 +130,15 @@ func TestLogReader_TTYStream(t *testing.T) {
 		t.Fatalf("third Next: got %v, want io.EOF", err)
 	}
 }
+
+func TestLogReader_TimestampedLine(t *testing.T) {
+	r := newFramedReader(frame(1, "2026-09-07T01:02:03.000000004Z hello\n"))
+	r.timestamps = true
+	line, err := r.Next()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := line.Time.Format("2006-01-02T15:04:05.000000000Z07:00"); got != "2026-09-07T01:02:03.000000004Z" || line.Text != "hello" {
+		t.Fatalf("line = %+v", line)
+	}
+}
