@@ -10,10 +10,30 @@ import (
 	"regexp"
 )
 
-// tooNewVersionRE matches Docker's 400 body when the client is pinned to an
-// API version newer than the daemon supports, e.g.:
-// "client version 1.50 is too new. Maximum supported API version is 1.43".
-var tooNewVersionRE = regexp.MustCompile(`client version .* is too new`)
+// versionMismatchRE matches Docker's 400 body when the client is pinned to
+// an API version outside the daemon's supported range, e.g.:
+// "client version 1.50 is too new. Maximum supported API version is 1.43"
+// "client version 1.43 is too old. Minimum supported API version is 1.44"
+// (the latter shows up once a daemon raises its minimum past vessel's
+// compiled-in defaultAPIVersion).
+var versionMismatchRE = regexp.MustCompile(`client version .* is too (new|old)`)
+
+// looksLikeVersionMismatch reports whether a 400 body signals an API-version
+// problem worth renegotiating for. Every one of Docker's own validation
+// errors carries a {"message": "..."} envelope; the one known exception is
+// some daemons' /info endpoint, which — when pinned below the daemon's
+// declared minimum API version — returns 400 with a body that decodes as a
+// (mostly empty) Info struct and no "message" field at all, rather than the
+// usual error text. Treating "valid JSON object, no message field" as a
+// version issue too catches that case without needing an endpoint-specific
+// special case.
+func looksLikeVersionMismatch(body []byte) bool {
+	if versionMismatchRE.Match(body) {
+		return true
+	}
+	var parsed dockerErrorBody
+	return json.Unmarshal(body, &parsed) == nil && parsed.Message == ""
+}
 
 // do issues a request against path (which must include the leading slash,
 // not the API version prefix) and returns the raw response for the caller
@@ -32,14 +52,18 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) (*htt
 	if resp.StatusCode == http.StatusBadRequest {
 		peek, rerr := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if rerr == nil && tooNewVersionRE.Match(peek) {
+		if rerr == nil && looksLikeVersionMismatch(peek) {
 			if negErr := c.negotiateVersion(ctx); negErr != nil {
 				return nil, negErr
 			}
-			return c.doOnce(ctx, method, path, body)
+			resp, err = c.doOnce(ctx, method, path, body)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// Not a version issue — reconstruct the body so mapError can read it.
+			resp.Body = io.NopCloser(bytes.NewReader(peek))
 		}
-		// Not a version issue — reconstruct the body so mapError can read it.
-		resp.Body = io.NopCloser(bytes.NewReader(peek))
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -66,13 +90,17 @@ func (c *Client) doStream(ctx context.Context, method, path string, body []byte)
 	if resp.StatusCode == http.StatusBadRequest {
 		peek, rerr := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if rerr == nil && tooNewVersionRE.Match(peek) {
+		if rerr == nil && looksLikeVersionMismatch(peek) {
 			if err := c.negotiateVersion(ctx); err != nil {
 				return nil, err
 			}
-			return c.doOnceWithClient(ctx, method, path, body, &client)
+			resp, err = c.doOnceWithClient(ctx, method, path, body, &client)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			resp.Body = io.NopCloser(bytes.NewReader(peek))
 		}
-		resp.Body = io.NopCloser(bytes.NewReader(peek))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, mapError(resp)

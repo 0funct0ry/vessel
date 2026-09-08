@@ -2,6 +2,7 @@
 package api
 
 import (
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -25,6 +26,11 @@ type Config struct {
 	AllowExec   bool
 	Tokens      *auth.Tokens
 	Webhooks    *webhook.Engine
+
+	// WebDist is the embedded frontend, or nil/WebDistErr set when this
+	// binary was built without the `embed` tag (see web.Dist()).
+	WebDist    fs.FS
+	WebDistErr error
 }
 
 type server struct {
@@ -105,6 +111,8 @@ func NewRouter(cfg Config) *gin.Engine {
 	v1.POST("/webhooks/:id/test", s.handleWebhookTest)
 	v1.GET("/webhooks/:id/deliveries", s.handleDeliveries)
 	v1.POST("/deliveries/:id/redeliver", s.handleRedeliver)
+
+	mountStatic(r, basePath, cfg.WebDist, cfg.WebDistErr)
 
 	return r
 }

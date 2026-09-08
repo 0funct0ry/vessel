@@ -1,4 +1,4 @@
-.PHONY: dev build test lint fmt clean
+.PHONY: dev build test lint fmt clean web-build
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -11,8 +11,11 @@ LDFLAGS := -X github.com/0funct0ry/vessel/internal/version.Version=$(VERSION) \
 dev:
 	go run . serve
 
-build:
-	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/vessel .
+web-build:
+	cd web && npm ci && npm run build
+
+build: web-build
+	CGO_ENABLED=0 go build -tags embed -ldflags "$(LDFLAGS)" -o bin/vessel .
 
 test:
 	go test ./...
@@ -24,4 +27,4 @@ fmt:
 	gofmt -l -w .
 
 clean:
-	rm -rf bin
+	rm -rf bin web/dist

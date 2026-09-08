@@ -23,7 +23,7 @@ var doctorCmd = &cobra.Command{
 func init() {
 	flags := doctorCmd.Flags()
 	addConfigFlag(flags)
-	flags.String("docker-host", "unix:///var/run/docker.sock", "Docker Engine API host")
+	flags.String("docker-host", "", "Docker Engine API host (auto-detected if omitted)")
 }
 
 // runDoctor resolves the configured Docker host, dials it, and reports
@@ -40,8 +40,9 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	host := v.GetString("docker-host")
-	fmt.Printf("docker-host: %s\n", host)
+	resolved := detectDockerHost(v.GetString("docker-host"))
+	host := resolved.Host
+	fmt.Printf("docker-host: %s%s\n", host, dockerHostBannerNote(resolved.Source))
 
 	if strings.HasPrefix(host, "unix://") {
 		checkSocketPermissions(strings.TrimPrefix(host, "unix://"))

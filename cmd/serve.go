@@ -22,6 +22,7 @@ import (
 	"github.com/0funct0ry/vessel/internal/store/sqlitestore"
 	"github.com/0funct0ry/vessel/internal/version"
 	"github.com/0funct0ry/vessel/internal/webhook"
+	"github.com/0funct0ry/vessel/web"
 )
 
 var serveCmd = &cobra.Command{
@@ -44,7 +45,7 @@ func addServeFlags(flags *pflag.FlagSet) {
 	flags.String("addr", "127.0.0.1", "Bind address")
 	flags.Int("port", 7373, "Bind port")
 	flags.String("db", "", "SQLite file. Omitted means in-memory store")
-	flags.String("docker-host", "unix:///var/run/docker.sock", "Docker Engine API host")
+	flags.String("docker-host", "", "Docker Engine API host (auto-detected if omitted)")
 	flags.Bool("auth", false, "Require login. Implied when any user exists")
 	flags.String("jwt-ttl", "24h", "Access-token lifetime")
 	flags.Bool("read-only", false, "Serve GETs only; every mutating route returns 403")
@@ -106,6 +107,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	engineCtx, stopWebhooks := context.WithCancel(context.Background())
 	defer stopWebhooks()
 	webhookEngine.Start(engineCtx, dockerClient)
+	webDist, webDistErr := web.Dist()
 	router := api.NewRouter(api.Config{
 		Docker:      dockerClient,
 		ReadOnly:    cfg.ReadOnly,
@@ -116,6 +118,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Tokens:      tokens,
 		Logger:      slog.Default(),
 		Webhooks:    webhookEngine,
+		WebDist:     webDist,
+		WebDistErr:  webDistErr,
 	})
 	srv := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", cfg.Addr, cfg.Port),
@@ -161,7 +165,7 @@ func effectiveAuth(ctx context.Context, requested bool, persistence store.Store)
 
 func printBanner(cfg *Config, authEnabled, generatedSecret bool) {
 	fmt.Printf("Vessel %s — http://%s:%d\n", version.String(), cfg.Addr, cfg.Port)
-	fmt.Printf("docker: %s (engine probe not yet implemented)\n", cfg.DockerHost)
+	fmt.Printf("docker: %s%s (engine probe not yet implemented)\n", cfg.DockerHost, dockerHostBannerNote(cfg.DockerHostSource))
 
 	if cfg.DB == "" {
 		fmt.Println("store:  in-memory (no --db given; webhooks and users will not persist)")

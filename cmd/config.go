@@ -10,19 +10,20 @@ import (
 // Config is the fully resolved configuration for `vessel serve`, after
 // flag→env→file→default precedence has been applied by Viper.
 type Config struct {
-	Addr       string
-	Port       int
-	DB         string
-	DockerHost string
-	Auth       bool
-	JWTTTL     time.Duration
-	ReadOnly   bool
-	BasePath   string
-	AllowExec  bool
-	LogLevel   string
-	Open       bool
-	Override   bool // --i-know-what-im-doing
-	ConfigFile string
+	Addr             string
+	Port             int
+	DB               string
+	DockerHost       string
+	DockerHostSource string // "flag", "env DOCKER_HOST", "auto-detected", or "default"
+	Auth             bool
+	JWTTTL           time.Duration
+	ReadOnly         bool
+	BasePath         string
+	AllowExec        bool
+	LogLevel         string
+	Open             bool
+	Override         bool // --i-know-what-im-doing
+	ConfigFile       string
 }
 
 var validLogLevels = map[string]bool{
@@ -63,19 +64,22 @@ func NewConfig(v *viper.Viper) (*Config, error) {
 		basePath = "/"
 	}
 
+	dockerHost := detectDockerHost(v.GetString("docker-host"))
+
 	return &Config{
-		Addr:       addr,
-		Port:       port,
-		DB:         v.GetString("db"),
-		DockerHost: v.GetString("docker-host"),
-		Auth:       v.GetBool("auth"),
-		JWTTTL:     jwtTTL,
-		ReadOnly:   v.GetBool("read-only"),
-		BasePath:   basePath,
-		AllowExec:  v.GetBool("allow-exec"),
-		LogLevel:   logLevel,
-		Open:       v.GetBool("open"),
-		Override:   v.GetBool("i-know-what-im-doing"),
-		ConfigFile: v.ConfigFileUsed(),
+		Addr:             addr,
+		Port:             port,
+		DB:               v.GetString("db"),
+		DockerHost:       dockerHost.Host,
+		DockerHostSource: dockerHost.Source,
+		Auth:             v.GetBool("auth"),
+		JWTTTL:           jwtTTL,
+		ReadOnly:         v.GetBool("read-only"),
+		BasePath:         basePath,
+		AllowExec:        v.GetBool("allow-exec"),
+		LogLevel:         logLevel,
+		Open:             v.GetBool("open"),
+		Override:         v.GetBool("i-know-what-im-doing"),
+		ConfigFile:       v.ConfigFileUsed(),
 	}, nil
 }
