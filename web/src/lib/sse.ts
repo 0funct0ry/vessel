@@ -66,7 +66,6 @@ export function useSSE(path: string | null, handlers: Handlers): SSEStatus {
       es?.close();
       setStatus("closed");
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
 
   return status;

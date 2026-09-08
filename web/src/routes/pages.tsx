@@ -1,4 +1,5 @@
 import { EmptyState } from "../components/ui/EmptyState";
+export { ContainerDetailPage, ContainersPage } from "./containers";
 
 // Placeholder pages for every SPEC §9.1 route. Real content lands in
 // M13 (containers), M14 (logs), M15 (images), M16 (volumes/networks),
@@ -7,14 +8,6 @@ import { EmptyState } from "../components/ui/EmptyState";
 
 export function DashboardPage() {
   return <EmptyState title="Dashboard is not built yet" action="This lands in M17." />;
-}
-
-export function ContainersPage() {
-  return <EmptyState title="No containers to show yet" action="The container list lands in M13." />;
-}
-
-export function ContainerDetailPage() {
-  return <EmptyState title="Container detail is not built yet" action="Lands in M13." />;
 }
 
 export function ImagesPage() {

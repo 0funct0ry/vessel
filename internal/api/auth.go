@@ -60,12 +60,17 @@ func (s *server) authMiddleware() gin.HandlerFunc {
 			authFailure(c, "invalid_token")
 			return
 		}
-		header := c.GetHeader("Authorization")
-		if !strings.HasPrefix(header, "Bearer ") || strings.TrimSpace(strings.TrimPrefix(header, "Bearer ")) == "" {
+		token := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
+		// Native EventSource cannot send Authorization headers. Limit the URL-token
+		// escape hatch to read-only SSE routes; normal API requests remain header-only.
+		if token == "" && c.Request.Method == http.MethodGet && isSSERoute(c.Request.URL.Path) {
+			token = c.Query("token")
+		}
+		if token == "" {
 			authFailure(c, "invalid_token")
 			return
 		}
-		claims, err := s.tokens.Parse(strings.TrimSpace(strings.TrimPrefix(header, "Bearer ")))
+		claims, err := s.tokens.Parse(token)
 		if errors.Is(err, auth.ErrExpiredToken) {
 			authFailure(c, "token_expired")
 			return
@@ -77,6 +82,10 @@ func (s *server) authMiddleware() gin.HandlerFunc {
 		c.Set(claimsKey, claims)
 		c.Next()
 	}
+}
+
+func isSSERoute(path string) bool {
+	return strings.HasSuffix(path, "/logs") || strings.HasSuffix(path, "/stats") || strings.HasSuffix(path, "/events")
 }
 
 func (s *server) handleLogin(c *gin.Context) {

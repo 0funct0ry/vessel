@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,9 +11,15 @@ import (
 	"time"
 
 	"github.com/0funct0ry/vessel/internal/auth"
+	"github.com/0funct0ry/vessel/internal/dockerapi"
 	"github.com/0funct0ry/vessel/internal/store"
 	"github.com/0funct0ry/vessel/internal/store/memstore"
 )
+
+type eofStatsStream struct{}
+
+func (eofStatsStream) Next() (dockerapi.Stats, error) { return dockerapi.Stats{}, io.EOF }
+func (eofStatsStream) Close() error                   { return nil }
 
 func authenticatedRouter(t *testing.T) (http.Handler, *auth.Tokens) {
 	t.Helper()
@@ -89,5 +96,46 @@ func TestExpiredTokenHasStableError(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if rec.Code != 401 || !strings.Contains(rec.Body.String(), "token_expired") {
 		t.Fatalf("response=%d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSSEQueryTokenAuthentication(t *testing.T) {
+	router, tokens := authenticatedRouter(t)
+	token, err := tokens.Issue(store.User{ID: 1, Username: "alice", Role: store.RoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"/api/v1/containers/x/stats", "/api/v1/containers?token=" + token, "/api/v1/containers/x/stats?token=bad"} {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if target == "/api/v1/containers/x/stats" || strings.Contains(target, "token=bad") {
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("%s status=%d", target, rec.Code)
+			}
+		} else if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("non-SSE URL token accepted: %d", rec.Code)
+		}
+	}
+}
+
+func TestStatsSSEAcceptsValidQueryToken(t *testing.T) {
+	s := memstore.New()
+	tokens, _, err := auth.LoadTokens(context.Background(), s, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := tokens.Issue(store.User{ID: 1, Username: "alice", Role: store.RoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := newFakeDockerClient()
+	fake.statsStream = eofStatsStream{}
+	router := NewRouter(Config{Docker: fake, Store: s, AuthEnabled: true, Tokens: tokens})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/containers/x/stats?token="+token, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
