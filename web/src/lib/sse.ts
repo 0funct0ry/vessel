@@ -15,7 +15,7 @@ function apiUrl(path: string): string {
  * Wraps EventSource with typed named events and backoff reconnect. Every
  * streaming page (logs, stats, events, pull progress) shares this hook.
  */
-export function useSSE(path: string | null, handlers: Handlers): SSEStatus {
+export function useSSE(path: string | null, handlers: Handlers, options: { reconnect?: boolean } = {}): SSEStatus {
   const [status, setStatus] = useState<SSEStatus>("connecting");
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
@@ -47,14 +47,18 @@ export function useSSE(path: string | null, handlers: Handlers): SSEStatus {
       es.onerror = () => {
         es?.close();
         if (cancelled) return;
+        if (options.reconnect === false) {
+          setStatus("closed");
+          return;
+        }
         attempt += 1;
         const delay = Math.min(30_000, 500 * 2 ** attempt);
         setStatus("reconnecting");
         retryTimer = setTimeout(connect, delay);
       };
 
-      for (const [event, fn] of Object.entries(handlersRef.current)) {
-        es.addEventListener(event, (e) => fn((e as MessageEvent).data));
+      for (const event of Object.keys(handlersRef.current)) {
+        es.addEventListener(event, (e) => handlersRef.current[event]?.((e as MessageEvent).data));
       }
     }
 
@@ -66,7 +70,7 @@ export function useSSE(path: string | null, handlers: Handlers): SSEStatus {
       es?.close();
       setStatus("closed");
     };
-  }, [path]);
+  }, [path, options.reconnect]);
 
   return status;
 }

@@ -41,3 +41,4 @@ export interface ContainerNetwork { network_id: string; ip_address: string }
 export interface ContainerDetail { id: string; name: string; image: string; command: string[]; created: string; state: string; status: string; exit_code: number; health: string; restart_policy: string; mounts: ContainerMount[]; networks: Record<string, ContainerNetwork>; env: string[]; labels: Record<string, string>; raw: unknown }
 export interface Host { server_version: string; api_version: string; containers: { total: number; running: number; paused: number; stopped: number } }
 export interface Stats { ts: string; cpu_pct: number | null; mem: { used: number; limit: number }; net: { rx: number; tx: number }; blk: { read: number; write: number } }
+export interface LogLine { ts?: string; stream: "stdout" | "stderr" | "vessel"; line: string }
