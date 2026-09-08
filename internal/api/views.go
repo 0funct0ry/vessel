@@ -136,11 +136,16 @@ type hostContainersView struct {
 }
 
 type hostDiskView struct {
-	LayersSize int64 `json:"layers_size"`
-	Images     int   `json:"images"`
-	Containers int   `json:"containers"`
-	Volumes    int   `json:"volumes"`
-	BuildCache int   `json:"build_cache"`
+	Images      int64 `json:"images"`
+	Containers  int64 `json:"containers"`
+	Volumes     int64 `json:"volumes"`
+	BuildCache  int64 `json:"build_cache"`
+	Reclaimable int64 `json:"reclaimable"`
+}
+
+type hostMemoryView struct {
+	Used  uint64 `json:"used"`
+	Limit uint64 `json:"limit"`
 }
 
 type hostView struct {
@@ -154,6 +159,8 @@ type hostView struct {
 	KernelVersion   string             `json:"kernel_version"`
 	CPUs            int                `json:"cpus"`
 	MemoryBytes     int64              `json:"memory_bytes"`
+	CPUPercent      float64            `json:"cpu_pct"`
+	Memory          hostMemoryView     `json:"memory"`
 	Containers      hostContainersView `json:"containers"`
 	Images          int                `json:"images"`
 	Disk            hostDiskView       `json:"disk"`

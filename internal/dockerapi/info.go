@@ -149,20 +149,51 @@ func (c *Client) Info(ctx context.Context) (*Info, error) {
 
 // DiskUsageInfo is the view of GET /system/df returned to callers.
 type DiskUsageInfo struct {
-	LayersSize int64
-	Images     []json.RawMessage
-	Containers []json.RawMessage
-	Volumes    []json.RawMessage
-	BuildCache []json.RawMessage
+	Images     []DiskImage
+	Containers []DiskContainer
+	Volumes    []DiskVolume
+	BuildCache []DiskBuildCache
 	Raw        json.RawMessage
 }
 
+type DiskImage struct {
+	Size       int64
+	Containers int
+}
+type DiskContainer struct {
+	SizeRW int64
+	State  string
+}
+type DiskVolume struct {
+	UsageData struct {
+		Size     int64
+		RefCount int
+	}
+}
+type DiskBuildCache struct {
+	Size       int64
+	UsageCount int
+}
+
 type diskUsageResponse struct {
-	LayersSize int64             `json:"LayersSize"`
-	Images     []json.RawMessage `json:"Images"`
-	Containers []json.RawMessage `json:"Containers"`
-	Volumes    []json.RawMessage `json:"Volumes"`
-	BuildCache []json.RawMessage `json:"BuildCache"`
+	Images []struct {
+		Size       int64 `json:"Size"`
+		Containers int   `json:"Containers"`
+	} `json:"Images"`
+	Containers []struct {
+		SizeRW int64  `json:"SizeRw"`
+		State  string `json:"State"`
+	} `json:"Containers"`
+	Volumes []struct {
+		UsageData struct {
+			Size     int64 `json:"Size"`
+			RefCount int   `json:"RefCount"`
+		} `json:"UsageData"`
+	} `json:"Volumes"`
+	BuildCache []struct {
+		Size       int64 `json:"Size"`
+		UsageCount int   `json:"UsageCount"`
+	} `json:"BuildCache"`
 }
 
 // DiskUsage calls GET /system/df.
@@ -183,12 +214,20 @@ func (c *Client) DiskUsage(ctx context.Context) (*DiskUsageInfo, error) {
 		return nil, fmt.Errorf("dockerapi: decoding /system/df response: %w", err)
 	}
 
-	return &DiskUsageInfo{
-		LayersSize: v.LayersSize,
-		Images:     v.Images,
-		Containers: v.Containers,
-		Volumes:    v.Volumes,
-		BuildCache: v.BuildCache,
-		Raw:        raw,
-	}, nil
+	info := &DiskUsageInfo{Raw: raw}
+	for _, image := range v.Images {
+		info.Images = append(info.Images, DiskImage{Size: image.Size, Containers: image.Containers})
+	}
+	for _, container := range v.Containers {
+		info.Containers = append(info.Containers, DiskContainer{SizeRW: container.SizeRW, State: container.State})
+	}
+	for _, volume := range v.Volumes {
+		var out DiskVolume
+		out.UsageData.Size, out.UsageData.RefCount = volume.UsageData.Size, volume.UsageData.RefCount
+		info.Volumes = append(info.Volumes, out)
+	}
+	for _, cache := range v.BuildCache {
+		info.BuildCache = append(info.BuildCache, DiskBuildCache{Size: cache.Size, UsageCount: cache.UsageCount})
+	}
+	return info, nil
 }

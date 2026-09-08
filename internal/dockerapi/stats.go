@@ -29,8 +29,19 @@ type statsFrame struct {
 	} `json:"precpu_stats"`
 	MemoryStats struct {
 		Usage uint64            `json:"usage"`
+		Limit uint64            `json:"limit"`
 		Stats map[string]uint64 `json:"stats"`
 	} `json:"memory_stats"`
+	Networks map[string]struct {
+		RXBytes uint64 `json:"rx_bytes"`
+		TXBytes uint64 `json:"tx_bytes"`
+	} `json:"networks"`
+	BlkioStats struct {
+		IOServiceBytesRecursive []struct {
+			Op    string `json:"op"`
+			Value uint64 `json:"value"`
+		} `json:"io_service_bytes_recursive"`
+	} `json:"blkio_stats"`
 }
 
 // Stats is one computed sample from a container's stats stream.
@@ -41,7 +52,17 @@ type Stats struct {
 	CPUPercent *float64
 	MemUsage   uint64
 	MemLimit   uint64
+	NetRX      uint64
+	NetTX      uint64
+	BlkRead    uint64
+	BlkWrite   uint64
 	Raw        json.RawMessage
+}
+
+// StatsStream is the API-facing iterator over container statistics.
+type StatsStream interface {
+	Next() (Stats, error)
+	Close() error
 }
 
 // StatsReader streams computed Stats samples from a container. Call Next in
@@ -73,25 +94,25 @@ func (r *StatsReader) Next() (Stats, error) {
 		return Stats{}, fmt.Errorf("dockerapi: decoding stats frame: %w", err)
 	}
 
-	memUsage := f.MemoryStats.Usage
-	if v, ok := f.MemoryStats.Stats["inactive_file"]; ok {
-		// cgroup v2
-		memUsage -= v
-	} else if v, ok := f.MemoryStats.Stats["cache"]; ok {
-		// cgroup v1
-		memUsage -= v
+	memUsage := adjustedMemoryUsage(f.MemoryStats.Usage, f.MemoryStats.Stats)
+	var netRX, netTX uint64
+	for _, network := range f.Networks {
+		netRX += network.RXBytes
+		netTX += network.TXBytes
+	}
+	var blkRead, blkWrite uint64
+	for _, entry := range f.BlkioStats.IOServiceBytesRecursive {
+		switch entry.Op {
+		case "Read":
+			blkRead += entry.Value
+		case "Write":
+			blkWrite += entry.Value
+		}
 	}
 
 	var cpuPercent *float64
 	if r.havePrev {
-		cpuDelta := float64(f.CPUStats.CPUUsage.TotalUsage) - float64(r.prevTotal)
-		sysDelta := float64(f.CPUStats.SystemCPUUsage) - float64(r.prevSys)
-		if sysDelta > 0 && cpuDelta >= 0 {
-			online := float64(f.CPUStats.OnlineCPUs)
-			if online == 0 {
-				online = 1
-			}
-			pct := (cpuDelta / sysDelta) * online * 100
+		if pct, ok := cpuPercentFor(f.CPUStats.CPUUsage.TotalUsage, r.prevTotal, f.CPUStats.SystemCPUUsage, r.prevSys, f.CPUStats.OnlineCPUs); ok {
 			cpuPercent = &pct
 		}
 	}
@@ -103,15 +124,69 @@ func (r *StatsReader) Next() (Stats, error) {
 		Read:       f.Read,
 		CPUPercent: cpuPercent,
 		MemUsage:   memUsage,
-		MemLimit:   0,
+		MemLimit:   f.MemoryStats.Limit,
+		NetRX:      netRX,
+		NetTX:      netTX,
+		BlkRead:    blkRead,
+		BlkWrite:   blkWrite,
 		Raw:        raw,
 	}, nil
 }
 
+func adjustedMemoryUsage(usage uint64, stats map[string]uint64) uint64 {
+	adjustment, ok := stats["inactive_file"] // cgroup v2
+	if !ok {
+		adjustment = stats["cache"] // cgroup v1
+	}
+	if adjustment > usage {
+		return 0
+	}
+	return usage - adjustment
+}
+
+func cpuPercentFor(total, previousTotal, system, previousSystem uint64, onlineCPUs uint32) (float64, bool) {
+	if total < previousTotal || system <= previousSystem {
+		return 0, false
+	}
+	online := float64(onlineCPUs)
+	if online == 0 {
+		online = 1
+	}
+	return (float64(total-previousTotal) / float64(system-previousSystem)) * online * 100, true
+}
+
 // StatsStream calls GET /containers/{id}/stats?stream=1 and returns a
 // StatsReader over the response body.
-func (c *Client) StatsStream(ctx context.Context, id string) (*StatsReader, error) {
-	path := "/containers/" + url.PathEscape(id) + "/stats?stream=1"
+func (c *Client) StatsStream(ctx context.Context, id string) (StatsStream, error) {
+	return c.stats(ctx, id, true)
+}
+
+// Stats returns one immediate Docker stats sample. Unlike StatsStream, its CPU
+// percentage uses Docker's embedded precpu_stats baseline.
+func (c *Client) Stats(ctx context.Context, id string) (Stats, error) {
+	stream, err := c.stats(ctx, id, false)
+	if err != nil {
+		return Stats{}, err
+	}
+	defer stream.Close()
+	sample, err := stream.Next()
+	if err != nil {
+		return Stats{}, err
+	}
+	if sample.CPUPercent == nil {
+		var frame statsFrame
+		if err := json.Unmarshal(sample.Raw, &frame); err != nil {
+			return Stats{}, fmt.Errorf("dockerapi: decoding stats frame: %w", err)
+		}
+		if pct, ok := cpuPercentFor(frame.CPUStats.CPUUsage.TotalUsage, frame.PreCPUStats.CPUUsage.TotalUsage, frame.CPUStats.SystemCPUUsage, frame.PreCPUStats.SystemCPUUsage, frame.CPUStats.OnlineCPUs); ok {
+			sample.CPUPercent = &pct
+		}
+	}
+	return sample, nil
+}
+
+func (c *Client) stats(ctx context.Context, id string, stream bool) (*StatsReader, error) {
+	path := "/containers/" + url.PathEscape(id) + "/stats?stream=" + map[bool]string{true: "1", false: "0"}[stream]
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url(path), nil)
 	if err != nil {

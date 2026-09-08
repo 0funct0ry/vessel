@@ -37,6 +37,9 @@ type fakeDockerClient struct {
 	logs           dockerapi.LogStream
 	logCalls       []dockerapi.LogsOptions
 	prune          *dockerapi.PruneReport
+	stats          dockerapi.Stats
+	statsStream    dockerapi.StatsStream
+	statsCalls     []string
 }
 
 func newFakeDockerClient() *fakeDockerClient {
@@ -79,6 +82,15 @@ func (f *fakeDockerClient) InspectContainer(context.Context, string) (*dockerapi
 func (f *fakeDockerClient) LogStream(_ context.Context, _ string, opts dockerapi.LogsOptions) (dockerapi.LogStream, error) {
 	f.logCalls = append(f.logCalls, opts)
 	return f.logs, f.err
+}
+
+func (f *fakeDockerClient) StatsStream(_ context.Context, id string) (dockerapi.StatsStream, error) {
+	f.statsCalls = append(f.statsCalls, id)
+	return f.statsStream, f.err
+}
+
+func (f *fakeDockerClient) Stats(context.Context, string) (dockerapi.Stats, error) {
+	return f.stats, f.err
 }
 
 func (f *fakeDockerClient) Top(context.Context, string, string) (*dockerapi.TopEntry, error) {
@@ -248,12 +260,12 @@ func TestHostAndTopJSON(t *testing.T) {
 		MemTotal: 16 << 30, ServerVersion: "27.1",
 	}
 	fake.version = &dockerapi.VersionInfo{Version: "27.1", APIVersion: "1.47", MinAPI: "1.24", Os: "linux", Arch: "arm64", KernelVer: "6.8"}
-	fake.disk = &dockerapi.DiskUsageInfo{LayersSize: 900, Images: []json.RawMessage{{}, {}}, Containers: []json.RawMessage{{}}, Volumes: []json.RawMessage{{}, {}, {}}, BuildCache: []json.RawMessage{{}}}
+	fake.disk = &dockerapi.DiskUsageInfo{Images: []dockerapi.DiskImage{{Size: 900}, {Size: 20}}, Containers: []dockerapi.DiskContainer{{SizeRW: 10}}, Volumes: []dockerapi.DiskVolume{{}, {}, {}}, BuildCache: []dockerapi.DiskBuildCache{{Size: 3}}}
 	fake.top = &dockerapi.TopEntry{Titles: []string{"PID", "CMD"}, Processes: [][]string{{"1", "/app"}}}
 	router := NewRouter(Config{Docker: fake})
 
 	response := performRequest(router, http.MethodGet, "/api/v1/host")
-	assertJSON(t, response.Body.String(), `{"id":"host1","server_version":"27.1","api_version":"1.47","min_api_version":"1.24","operating_system":"Linux","os_type":"linux","architecture":"arm64","kernel_version":"6.8","cpus":8,"memory_bytes":17179869184,"containers":{"total":4,"running":2,"paused":1,"stopped":1},"images":7,"disk":{"layers_size":900,"images":2,"containers":1,"volumes":3,"build_cache":1}}`)
+	assertJSON(t, response.Body.String(), `{"id":"host1","server_version":"27.1","api_version":"1.47","min_api_version":"1.24","operating_system":"Linux","os_type":"linux","architecture":"arm64","kernel_version":"6.8","cpus":8,"memory_bytes":17179869184,"cpu_pct":0,"memory":{"used":0,"limit":0},"containers":{"total":4,"running":2,"paused":1,"stopped":1},"images":7,"disk":{"images":920,"containers":10,"volumes":0,"build_cache":3,"reclaimable":933}}`)
 
 	response = performRequest(router, http.MethodGet, "/api/v1/containers/c1/top?ps_args=aux")
 	assertJSON(t, response.Body.String(), `{"titles":["PID","CMD"],"processes":[["1","/app"]]}`)

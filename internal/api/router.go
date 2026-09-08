@@ -21,6 +21,7 @@ type Config struct {
 
 type server struct {
 	docker DockerClient
+	stats  *statsHub
 }
 
 // NewRouter builds the Gin engine and registers the v1 HTTP API.
@@ -37,7 +38,7 @@ func NewRouter(cfg Config) *gin.Engine {
 	r.Use(recoveryMiddleware(logger))
 	r.Use(readOnlyMiddleware(cfg.ReadOnly))
 
-	s := &server{docker: cfg.Docker}
+	s := &server{docker: cfg.Docker, stats: newStatsHub(cfg.Docker)}
 	v1 := r.Group(normalizeBasePath(cfg.BasePath) + "/api/v1")
 	v1.GET("/health", handleHealth)
 	v1.GET("/version", handleVersion)
@@ -45,6 +46,7 @@ func NewRouter(cfg Config) *gin.Engine {
 	v1.GET("/containers", s.handleContainers)
 	v1.GET("/containers/:id", s.handleContainer)
 	v1.GET("/containers/:id/logs", s.handleContainerLogs)
+	v1.GET("/containers/:id/stats", s.handleContainerStats)
 	v1.GET("/containers/:id/top", s.handleContainerTop)
 	v1.POST("/containers/:id/:action", s.handleContainerLifecycle)
 	v1.DELETE("/containers/:id", s.handleContainerRemove)

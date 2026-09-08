@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -333,6 +335,16 @@ func (s *server) handleHost(c *gin.Context) {
 		return
 	}
 
+	running, err := s.docker.ListContainers(c.Request.Context(), dockerapi.ListContainersOptions{All: true})
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	cpu, memory, err := s.hostAggregates(c.Request.Context(), running)
+	if err != nil {
+		Fail(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, hostView{
 		ID:              info.ID,
 		ServerVersion:   firstNonEmpty(info.ServerVersion, engineVersion.Version),
@@ -344,16 +356,81 @@ func (s *server) handleHost(c *gin.Context) {
 		KernelVersion:   engineVersion.KernelVer,
 		CPUs:            info.NCPU,
 		MemoryBytes:     info.MemTotal,
+		CPUPercent:      cpu,
+		Memory:          memory,
 		Containers: hostContainersView{
 			Total: info.Containers, Running: info.ContainersRunning,
 			Paused: info.ContainersPaused, Stopped: info.ContainersStopped,
 		},
 		Images: info.Images,
-		Disk: hostDiskView{
-			LayersSize: disk.LayersSize, Images: len(disk.Images), Containers: len(disk.Containers),
-			Volumes: len(disk.Volumes), BuildCache: len(disk.BuildCache),
-		},
+		Disk:   diskToHostView(disk),
 	})
+}
+
+func (s *server) hostAggregates(ctx context.Context, containers []dockerapi.Container) (float64, hostMemoryView, error) {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var cpu float64
+	var memory hostMemoryView
+	var firstErr error
+	for _, container := range containers {
+		if container.State != "running" {
+			continue
+		}
+		id := container.ID
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sample, err := s.docker.Stats(ctx, id)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if errors.Is(err, dockerapi.ErrNotFound) || errors.Is(err, dockerapi.ErrConflict) {
+					return
+				}
+				if firstErr == nil {
+					firstErr = err
+				}
+				return
+			}
+			if sample.CPUPercent != nil {
+				cpu += *sample.CPUPercent
+			}
+			memory.Used += sample.MemUsage
+			memory.Limit += sample.MemLimit
+		}()
+	}
+	wg.Wait()
+	return cpu, memory, firstErr
+}
+
+func diskToHostView(disk *dockerapi.DiskUsageInfo) hostDiskView {
+	var view hostDiskView
+	for _, image := range disk.Images {
+		view.Images += image.Size
+		if image.Containers == 0 {
+			view.Reclaimable += image.Size
+		}
+	}
+	for _, container := range disk.Containers {
+		view.Containers += container.SizeRW
+		if container.State != "running" {
+			view.Reclaimable += container.SizeRW
+		}
+	}
+	for _, volume := range disk.Volumes {
+		view.Volumes += volume.UsageData.Size
+		if volume.UsageData.RefCount == 0 {
+			view.Reclaimable += volume.UsageData.Size
+		}
+	}
+	for _, cache := range disk.BuildCache {
+		view.BuildCache += cache.Size
+		if cache.UsageCount == 0 {
+			view.Reclaimable += cache.Size
+		}
+	}
+	return view
 }
 
 func (s *server) handleContainers(c *gin.Context) {

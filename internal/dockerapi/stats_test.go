@@ -24,21 +24,23 @@ const statsSampleV2 = `{
   "read": "2024-01-01T00:00:00Z",
   "cpu_stats": {"cpu_usage": {"total_usage": 1000}, "system_cpu_usage": 100000, "online_cpus": 2},
   "precpu_stats": {"cpu_usage": {"total_usage": 0}, "system_cpu_usage": 0},
-  "memory_stats": {"usage": 5000000, "stats": {"inactive_file": 1000000}}
+  "memory_stats": {"usage": 5000000, "limit": 8000000, "stats": {"inactive_file": 1000000}},
+  "networks": {"eth0": {"rx_bytes": 11, "tx_bytes": 12}, "eth1": {"rx_bytes": 3, "tx_bytes": 4}},
+  "blkio_stats": {"io_service_bytes_recursive": [{"op":"Read","value":9},{"op":"Write","value":8},{"op":"Sync","value":7}]}
 }`
 
 const statsSampleV2Next = `{
   "read": "2024-01-01T00:00:02Z",
   "cpu_stats": {"cpu_usage": {"total_usage": 3000}, "system_cpu_usage": 300000, "online_cpus": 2},
   "precpu_stats": {"cpu_usage": {"total_usage": 1000}, "system_cpu_usage": 100000},
-  "memory_stats": {"usage": 6000000, "stats": {"inactive_file": 1000000}}
+	"memory_stats": {"usage": 6000000, "limit": 8000000, "stats": {"inactive_file": 1000000}}
 }`
 
 const statsSampleV1 = `{
   "read": "2024-01-01T00:00:00Z",
   "cpu_stats": {"cpu_usage": {"total_usage": 1000}, "system_cpu_usage": 100000, "online_cpus": 2},
   "precpu_stats": {"cpu_usage": {"total_usage": 0}, "system_cpu_usage": 0},
-  "memory_stats": {"usage": 5000000, "stats": {"cache": 2000000}}
+	"memory_stats": {"usage": 5000000, "limit": 9000000, "stats": {"cache": 2000000}}
 }`
 
 func TestStatsReader_FirstSampleCPUPercentIsNil(t *testing.T) {
@@ -53,6 +55,9 @@ func TestStatsReader_FirstSampleCPUPercentIsNil(t *testing.T) {
 	}
 	if s.MemUsage != 4000000 {
 		t.Fatalf("MemUsage = %d, want 4000000 (5000000 - 1000000 inactive_file)", s.MemUsage)
+	}
+	if s.MemLimit != 8000000 || s.NetRX != 14 || s.NetTX != 16 || s.BlkRead != 9 || s.BlkWrite != 8 {
+		t.Fatalf("stats fields = %+v", s)
 	}
 }
 
