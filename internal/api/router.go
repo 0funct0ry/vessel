@@ -8,20 +8,29 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/0funct0ry/vessel/internal/auth"
+	"github.com/0funct0ry/vessel/internal/store"
 	"github.com/0funct0ry/vessel/internal/version"
 )
 
 // Config supplies the runtime dependencies and routing options for the API.
 type Config struct {
-	Docker   DockerClient
-	ReadOnly bool
-	BasePath string
-	Logger   *slog.Logger
+	Docker      DockerClient
+	ReadOnly    bool
+	BasePath    string
+	Logger      *slog.Logger
+	Store       store.Store
+	AuthEnabled bool
+	Tokens      *auth.Tokens
 }
 
 type server struct {
-	docker DockerClient
-	stats  *statsHub
+	docker   DockerClient
+	stats    *statsHub
+	store    store.Store
+	tokens   *auth.Tokens
+	tickets  *auth.Tickets
+	throttle *auth.Throttle
 }
 
 // NewRouter builds the Gin engine and registers the v1 HTTP API.
@@ -38,10 +47,17 @@ func NewRouter(cfg Config) *gin.Engine {
 	r.Use(recoveryMiddleware(logger))
 	r.Use(readOnlyMiddleware(cfg.ReadOnly))
 
-	s := &server{docker: cfg.Docker, stats: newStatsHub(cfg.Docker)}
+	s := &server{docker: cfg.Docker, stats: newStatsHub(cfg.Docker), store: cfg.Store, tokens: cfg.Tokens, tickets: auth.NewTickets(), throttle: auth.NewThrottle()}
 	v1 := r.Group(normalizeBasePath(cfg.BasePath) + "/api/v1")
 	v1.GET("/health", handleHealth)
 	v1.GET("/version", handleVersion)
+	v1.POST("/auth/login", s.handleLogin)
+	if cfg.AuthEnabled {
+		v1.Use(s.authMiddleware())
+	}
+	v1.POST("/auth/logout", s.handleLogout)
+	v1.GET("/auth/me", s.handleMe)
+	v1.POST("/auth/ws-ticket", s.handleWSTicket)
 	v1.GET("/host", s.handleHost)
 	v1.GET("/containers", s.handleContainers)
 	v1.GET("/containers/:id", s.handleContainer)

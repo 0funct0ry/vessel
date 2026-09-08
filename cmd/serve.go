@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/0funct0ry/vessel/internal/api"
+	"github.com/0funct0ry/vessel/internal/auth"
 	"github.com/0funct0ry/vessel/internal/dockerapi"
 	"github.com/0funct0ry/vessel/internal/store"
 	"github.com/0funct0ry/vessel/internal/store/memstore"
@@ -68,9 +69,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := GuardBind(cfg.Addr, cfg.Auth, cfg.Override); err != nil {
-		return err
-	}
 	dockerClient, err := dockerapi.New(cfg.DockerHost)
 	if err != nil {
 		return fmt.Errorf("create Docker client: %w", err)
@@ -85,13 +83,30 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 	}
 	defer persistence.Close()
+	authEnabled, impliedAuth, err := effectiveAuth(context.Background(), cfg.Auth, persistence)
+	if err != nil {
+		return err
+	}
+	if impliedAuth {
+		fmt.Println("auth: enabled because one or more users exist")
+	}
+	if err := GuardBind(cfg.Addr, authEnabled, cfg.Override); err != nil {
+		return err
+	}
+	tokens, generated, err := auth.LoadTokens(context.Background(), persistence, cfg.JWTTTL)
+	if err != nil {
+		return err
+	}
 
-	printBanner(cfg)
+	printBanner(cfg, authEnabled, generated)
 
 	router := api.NewRouter(api.Config{
-		Docker:   dockerClient,
-		ReadOnly: cfg.ReadOnly,
-		BasePath: cfg.BasePath,
+		Docker:      dockerClient,
+		ReadOnly:    cfg.ReadOnly,
+		BasePath:    cfg.BasePath,
+		Store:       persistence,
+		AuthEnabled: authEnabled,
+		Tokens:      tokens,
 	})
 	srv := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", cfg.Addr, cfg.Port),
@@ -126,7 +141,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func printBanner(cfg *Config) {
+func effectiveAuth(ctx context.Context, requested bool, persistence store.Store) (enabled, implied bool, err error) {
+	users, err := persistence.ListUsers(ctx)
+	if err != nil {
+		return false, false, fmt.Errorf("list users: %w", err)
+	}
+	return requested || len(users) > 0, !requested && len(users) > 0, nil
+}
+
+func printBanner(cfg *Config, authEnabled, generatedSecret bool) {
 	fmt.Printf("Vessel %s — http://%s:%d\n", version.String(), cfg.Addr, cfg.Port)
 	fmt.Printf("docker: %s (engine probe not yet implemented)\n", cfg.DockerHost)
 
@@ -137,7 +160,7 @@ func printBanner(cfg *Config) {
 	}
 
 	authState := "off"
-	if cfg.Auth {
+	if authEnabled {
 		authState = "on"
 	} else if isLoopback(cfg.Addr) {
 		authState = "off (loopback bind)"
@@ -145,6 +168,9 @@ func printBanner(cfg *Config) {
 		authState = "off (bind guard overridden with --i-know-what-im-doing)"
 	}
 	fmt.Printf("auth:   %s\n", authState)
+	if cfg.DB == "" && generatedSecret {
+		fmt.Println("auth:   JWT secret is in-memory and will rotate on restart")
+	}
 
 	if cfg.ReadOnly {
 		fmt.Println("mode:   read-only")
