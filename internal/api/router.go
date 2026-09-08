@@ -22,6 +22,7 @@ type Config struct {
 	Logger      *slog.Logger
 	Store       store.Store
 	AuthEnabled bool
+	AllowExec   bool
 	Tokens      *auth.Tokens
 	Webhooks    *webhook.Engine
 }
@@ -35,6 +36,9 @@ type server struct {
 	throttle *auth.Throttle
 	webhooks *webhook.Engine
 	basePath string
+	logger   *slog.Logger
+	authOn   bool
+	execOn   bool
 }
 
 // NewRouter builds the Gin engine and registers the v1 HTTP API.
@@ -52,11 +56,16 @@ func NewRouter(cfg Config) *gin.Engine {
 	r.Use(readOnlyMiddleware(cfg.ReadOnly))
 
 	basePath := normalizeBasePath(cfg.BasePath)
-	s := &server{docker: cfg.Docker, stats: newStatsHub(cfg.Docker), store: cfg.Store, tokens: cfg.Tokens, tickets: auth.NewTickets(), throttle: auth.NewThrottle(), webhooks: cfg.Webhooks, basePath: basePath}
+	s := &server{docker: cfg.Docker, stats: newStatsHub(cfg.Docker), store: cfg.Store, tokens: cfg.Tokens, tickets: auth.NewTickets(), throttle: auth.NewThrottle(), webhooks: cfg.Webhooks, basePath: basePath, logger: logger, authOn: cfg.AuthEnabled, execOn: cfg.AllowExec && !cfg.ReadOnly}
 	v1 := r.Group(basePath + "/api/v1")
 	v1.GET("/health", handleHealth)
 	v1.GET("/version", handleVersion)
 	v1.POST("/auth/login", s.handleLogin)
+	if s.execOn {
+		// This handler authenticates with the one-time WebSocket ticket rather
+		// than the normal Authorization header middleware.
+		v1.GET("/containers/:id/exec", s.handleContainerExec)
+	}
 	if cfg.AuthEnabled {
 		v1.Use(s.authMiddleware())
 	}

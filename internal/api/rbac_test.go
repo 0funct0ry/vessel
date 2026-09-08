@@ -62,7 +62,7 @@ func TestRoleMiddlewareMatrix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := NewRouter(Config{Docker: newFakeDockerClient(), Store: persistence, AuthEnabled: true, Tokens: tokens})
+	router := NewRouter(Config{Docker: newFakeDockerClient(), Store: persistence, AuthEnabled: true, AllowExec: true, Tokens: tokens})
 	roles := []store.Role{store.RoleViewer, store.RoleOperator, store.RoleAdmin}
 	for _, route := range protectedRoutes {
 		for _, actual := range roles {
@@ -107,13 +107,13 @@ func TestMeIncludesCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := NewRouter(Config{Docker: newFakeDockerClient(), Store: persistence, AuthEnabled: true, Tokens: tokens})
+	router := NewRouter(Config{Docker: newFakeDockerClient(), Store: persistence, AuthEnabled: true, AllowExec: true, Tokens: tokens})
 	token, err := tokens.Issue(store.User{ID: 1, Username: "viewer", Role: store.RoleViewer})
 	if err != nil {
 		t.Fatal(err)
 	}
 	response := roleRequest(router, protectedRoute{method: http.MethodGet, path: "/api/v1/auth/me"}, token)
-	assertJSON(t, response.Body.String(), `{"auth":true,"user":{"id":"1","username":"viewer","role":"viewer"},"capabilities":{"auth.logout":true,"auth.me":true,"auth.ws_ticket":true,"host.read":true,"containers.read":true,"containers.logs":true,"containers.stats":true,"containers.top":true,"containers.start":false,"containers.stop":false,"containers.restart":false,"containers.pause":false,"containers.unpause":false,"containers.kill":false,"containers.rename":false,"containers.remove":false,"images.read":true,"images.pull":false,"images.tag":false,"images.remove":false,"volumes.read":true,"volumes.create":false,"volumes.remove":false,"networks.read":true,"networks.create":false,"networks.remove":false,"networks.connect":false,"networks.disconnect":false,"prune.run":false}}`)
+	assertJSON(t, response.Body.String(), `{"auth":true,"user":{"id":"1","username":"viewer","role":"viewer"},"capabilities":{"auth.logout":true,"auth.me":true,"auth.ws_ticket":true,"host.read":true,"containers.read":true,"containers.logs":true,"containers.stats":true,"containers.top":true,"containers.start":false,"containers.stop":false,"containers.restart":false,"containers.pause":false,"containers.unpause":false,"containers.kill":false,"containers.rename":false,"containers.remove":false,"containers.exec":false,"images.read":true,"images.pull":false,"images.tag":false,"images.remove":false,"volumes.read":true,"volumes.create":false,"volumes.remove":false,"networks.read":true,"networks.create":false,"networks.remove":false,"networks.connect":false,"networks.disconnect":false,"prune.run":false}}`)
 
 	response = roleRequest(NewRouter(Config{Docker: newFakeDockerClient()}), protectedRoute{method: http.MethodGet, path: "/api/v1/auth/me"}, "")
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"auth":false`) || !strings.Contains(response.Body.String(), `"role":"admin"`) || !strings.Contains(response.Body.String(), `"images.remove":true`) {

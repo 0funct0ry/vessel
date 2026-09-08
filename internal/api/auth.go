@@ -125,11 +125,19 @@ func (s *server) handleLogout(c *gin.Context) { c.Status(http.StatusNoContent) }
 func (s *server) handleMe(c *gin.Context) {
 	value, ok := c.Get(claimsKey)
 	if !ok {
-		c.JSON(http.StatusOK, gin.H{"auth": false, "user": gin.H{"role": store.RoleAdmin}, "capabilities": auth.Capabilities(store.RoleAdmin)})
+		c.JSON(http.StatusOK, gin.H{"auth": false, "user": gin.H{"role": store.RoleAdmin}, "capabilities": s.capabilities(store.RoleAdmin)})
 		return
 	}
 	claims := value.(auth.Claims)
-	c.JSON(http.StatusOK, gin.H{"auth": true, "user": gin.H{"id": claims.Subject, "username": claims.Name, "role": claims.Role}, "capabilities": auth.Capabilities(claims.Role)})
+	c.JSON(http.StatusOK, gin.H{"auth": true, "user": gin.H{"id": claims.Subject, "username": claims.Name, "role": claims.Role}, "capabilities": s.capabilities(claims.Role)})
+}
+
+func (s *server) capabilities(role store.Role) map[string]bool {
+	capabilities := auth.Capabilities(role)
+	if !s.execOn {
+		delete(capabilities, "containers.exec")
+	}
+	return capabilities
 }
 func (s *server) handleWSTicket(c *gin.Context) {
 	value, ok := c.Get(claimsKey)

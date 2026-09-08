@@ -40,6 +40,8 @@ type fakeDockerClient struct {
 	stats          dockerapi.Stats
 	statsStream    dockerapi.StatsStream
 	statsCalls     []string
+	execCalls      []dockerapi.ExecOptions
+	execCreate     func(dockerapi.ExecOptions) (string, error)
 }
 
 func newFakeDockerClient() *fakeDockerClient {
@@ -145,6 +147,17 @@ func (f *fakeDockerClient) NetworkConnect(context.Context, string, string, bool)
 func (f *fakeDockerClient) Prune(context.Context, string) (*dockerapi.PruneReport, error) {
 	return f.prune, f.err
 }
+func (f *fakeDockerClient) CreateExec(_ context.Context, _ string, opts dockerapi.ExecOptions) (string, error) {
+	f.execCalls = append(f.execCalls, opts)
+	if f.execCreate != nil {
+		return f.execCreate(opts)
+	}
+	return "exec1", f.err
+}
+func (f *fakeDockerClient) StartExec(context.Context, string, bool) (dockerapi.ExecSession, error) {
+	return nil, f.err
+}
+func (f *fakeDockerClient) ResizeExec(context.Context, string, int, int) error { return f.err }
 
 func performRequest(router http.Handler, method, target string) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()

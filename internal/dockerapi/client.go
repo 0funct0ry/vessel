@@ -32,6 +32,7 @@ type TLSConfig struct {
 type Client struct {
 	httpClient *http.Client
 	baseURL    string // e.g. "http://docker" or "https://1.2.3.4:2376"
+	dial       func(context.Context) (net.Conn, error)
 
 	mu         sync.RWMutex
 	apiVersion string
@@ -77,14 +78,23 @@ func New(host string, opts ...Option) (*Client, error) {
 		return &Client{
 			httpClient: &http.Client{Transport: transport, Timeout: o.timeout},
 			baseURL:    "http://docker",
+			dial: func(ctx context.Context) (net.Conn, error) {
+				d := net.Dialer{}
+				return d.DialContext(ctx, "unix", sockPath)
+			},
 			apiVersion: defaultAPIVersion,
 		}, nil
 
 	case strings.HasPrefix(host, "tcp://"):
 		addr := strings.TrimPrefix(host, "tcp://")
+		dial := func(ctx context.Context) (net.Conn, error) {
+			d := net.Dialer{}
+			return d.DialContext(ctx, "tcp", addr)
+		}
 		return &Client{
 			httpClient: &http.Client{Timeout: o.timeout},
 			baseURL:    "http://" + addr,
+			dial:       dial,
 			apiVersion: defaultAPIVersion,
 		}, nil
 
@@ -95,9 +105,14 @@ func New(host string, opts ...Option) (*Client, error) {
 			return nil, err
 		}
 		transport := &http.Transport{TLSClientConfig: tlsConf}
+		dial := func(ctx context.Context) (net.Conn, error) {
+			d := tls.Dialer{Config: tlsConf}
+			return d.DialContext(ctx, "tcp", addr)
+		}
 		return &Client{
 			httpClient: &http.Client{Transport: transport, Timeout: o.timeout},
 			baseURL:    "https://" + addr,
+			dial:       dial,
 			apiVersion: defaultAPIVersion,
 		}, nil
 

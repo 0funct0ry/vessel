@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -111,7 +112,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		BasePath:    cfg.BasePath,
 		Store:       persistence,
 		AuthEnabled: authEnabled,
+		AllowExec:   cfg.AllowExec,
 		Tokens:      tokens,
+		Logger:      slog.Default(),
 		Webhooks:    webhookEngine,
 	})
 	srv := &http.Server{
