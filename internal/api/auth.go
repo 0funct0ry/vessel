@@ -31,6 +31,29 @@ func authFailure(c *gin.Context, code string) {
 	c.AbortWithStatusJSON(http.StatusUnauthorized, errorEnvelope{Error: errorBody{Code: code, Message: "authentication required"}})
 }
 
+func (s *server) roleMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := strings.TrimPrefix(c.Request.URL.Path, s.basePath)
+		required, protected := auth.RequiredRole(c.Request.Method, path)
+		if !protected {
+			c.Next()
+			return
+		}
+
+		actual := store.RoleAdmin
+		if value, ok := c.Get(claimsKey); ok {
+			actual = value.(auth.Claims).Role
+		}
+		if !auth.Allows(actual, required) {
+			c.AbortWithStatusJSON(http.StatusForbidden, errorEnvelope{Error: errorBody{
+				Code: "forbidden_role", Message: "insufficient role", Required: required, Actual: actual,
+			}})
+			return
+		}
+		c.Next()
+	}
+}
+
 func (s *server) authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if s.tokens == nil {
@@ -102,11 +125,11 @@ func (s *server) handleLogout(c *gin.Context) { c.Status(http.StatusNoContent) }
 func (s *server) handleMe(c *gin.Context) {
 	value, ok := c.Get(claimsKey)
 	if !ok {
-		c.JSON(http.StatusOK, gin.H{"auth": false, "user": gin.H{"role": store.RoleAdmin}})
+		c.JSON(http.StatusOK, gin.H{"auth": false, "user": gin.H{"role": store.RoleAdmin}, "capabilities": auth.Capabilities(store.RoleAdmin)})
 		return
 	}
 	claims := value.(auth.Claims)
-	c.JSON(http.StatusOK, gin.H{"user": gin.H{"id": claims.Subject, "username": claims.Name, "role": claims.Role}})
+	c.JSON(http.StatusOK, gin.H{"auth": true, "user": gin.H{"id": claims.Subject, "username": claims.Name, "role": claims.Role}, "capabilities": auth.Capabilities(claims.Role)})
 }
 func (s *server) handleWSTicket(c *gin.Context) {
 	value, ok := c.Get(claimsKey)

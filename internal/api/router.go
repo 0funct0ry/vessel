@@ -31,6 +31,7 @@ type server struct {
 	tokens   *auth.Tokens
 	tickets  *auth.Tickets
 	throttle *auth.Throttle
+	basePath string
 }
 
 // NewRouter builds the Gin engine and registers the v1 HTTP API.
@@ -47,14 +48,16 @@ func NewRouter(cfg Config) *gin.Engine {
 	r.Use(recoveryMiddleware(logger))
 	r.Use(readOnlyMiddleware(cfg.ReadOnly))
 
-	s := &server{docker: cfg.Docker, stats: newStatsHub(cfg.Docker), store: cfg.Store, tokens: cfg.Tokens, tickets: auth.NewTickets(), throttle: auth.NewThrottle()}
-	v1 := r.Group(normalizeBasePath(cfg.BasePath) + "/api/v1")
+	basePath := normalizeBasePath(cfg.BasePath)
+	s := &server{docker: cfg.Docker, stats: newStatsHub(cfg.Docker), store: cfg.Store, tokens: cfg.Tokens, tickets: auth.NewTickets(), throttle: auth.NewThrottle(), basePath: basePath}
+	v1 := r.Group(basePath + "/api/v1")
 	v1.GET("/health", handleHealth)
 	v1.GET("/version", handleVersion)
 	v1.POST("/auth/login", s.handleLogin)
 	if cfg.AuthEnabled {
 		v1.Use(s.authMiddleware())
 	}
+	v1.Use(s.roleMiddleware())
 	v1.POST("/auth/logout", s.handleLogout)
 	v1.GET("/auth/me", s.handleMe)
 	v1.POST("/auth/ws-ticket", s.handleWSTicket)

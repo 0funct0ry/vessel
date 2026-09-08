@@ -9,12 +9,15 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/0funct0ry/vessel/internal/dockerapi"
+	"github.com/0funct0ry/vessel/internal/store"
 )
 
 type errorBody struct {
-	Code         string `json:"code"`
-	Message      string `json:"message"`
-	DockerStatus int    `json:"docker_status,omitempty"`
+	Code         string     `json:"code"`
+	Message      string     `json:"message"`
+	DockerStatus int        `json:"docker_status,omitempty"`
+	Required     store.Role `json:"required,omitempty"`
+	Actual       store.Role `json:"actual,omitempty"`
 }
 
 type errorEnvelope struct {
