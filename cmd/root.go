@@ -73,6 +73,7 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(userCmd)
 	rootCmd.AddCommand(webhookCmd)
+	rootCmd.AddCommand(migrateCmd)
 }
 
 // addConfigFlag registers the --config flag on a subcommand's own flag set.

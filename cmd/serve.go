@@ -15,6 +15,9 @@ import (
 
 	"github.com/0funct0ry/vessel/internal/api"
 	"github.com/0funct0ry/vessel/internal/dockerapi"
+	"github.com/0funct0ry/vessel/internal/store"
+	"github.com/0funct0ry/vessel/internal/store/memstore"
+	"github.com/0funct0ry/vessel/internal/store/sqlitestore"
 	"github.com/0funct0ry/vessel/internal/version"
 )
 
@@ -72,6 +75,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("create Docker client: %w", err)
 	}
+	var persistence store.Store
+	if cfg.DB == "" {
+		persistence = memstore.New()
+	} else {
+		persistence, err = sqlitestore.Open(cfg.DB)
+		if err != nil {
+			return fmt.Errorf("open store: %w", err)
+		}
+	}
+	defer persistence.Close()
 
 	printBanner(cfg)
 
