@@ -20,6 +20,7 @@ import (
 	"github.com/0funct0ry/vessel/internal/store/memstore"
 	"github.com/0funct0ry/vessel/internal/store/sqlitestore"
 	"github.com/0funct0ry/vessel/internal/version"
+	"github.com/0funct0ry/vessel/internal/webhook"
 )
 
 var serveCmd = &cobra.Command{
@@ -100,6 +101,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	printBanner(cfg, authEnabled, generated)
 
+	webhookEngine := webhook.New(webhook.Config{Store: persistence, Host: webhook.Host{}})
+	engineCtx, stopWebhooks := context.WithCancel(context.Background())
+	defer stopWebhooks()
+	webhookEngine.Start(engineCtx, dockerClient)
 	router := api.NewRouter(api.Config{
 		Docker:      dockerClient,
 		ReadOnly:    cfg.ReadOnly,
@@ -107,6 +112,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Store:       persistence,
 		AuthEnabled: authEnabled,
 		Tokens:      tokens,
+		Webhooks:    webhookEngine,
 	})
 	srv := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", cfg.Addr, cfg.Port),
@@ -136,6 +142,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err := srv.Shutdown(ctx); err != nil {
 		return fmt.Errorf("graceful shutdown failed: %w", err)
 	}
+	webhookEngine.Close()
 
 	fmt.Println("vessel stopped")
 	return nil

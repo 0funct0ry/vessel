@@ -11,6 +11,7 @@ import (
 	"github.com/0funct0ry/vessel/internal/auth"
 	"github.com/0funct0ry/vessel/internal/store"
 	"github.com/0funct0ry/vessel/internal/version"
+	"github.com/0funct0ry/vessel/internal/webhook"
 )
 
 // Config supplies the runtime dependencies and routing options for the API.
@@ -22,6 +23,7 @@ type Config struct {
 	Store       store.Store
 	AuthEnabled bool
 	Tokens      *auth.Tokens
+	Webhooks    *webhook.Engine
 }
 
 type server struct {
@@ -31,6 +33,7 @@ type server struct {
 	tokens   *auth.Tokens
 	tickets  *auth.Tickets
 	throttle *auth.Throttle
+	webhooks *webhook.Engine
 	basePath string
 }
 
@@ -49,7 +52,7 @@ func NewRouter(cfg Config) *gin.Engine {
 	r.Use(readOnlyMiddleware(cfg.ReadOnly))
 
 	basePath := normalizeBasePath(cfg.BasePath)
-	s := &server{docker: cfg.Docker, stats: newStatsHub(cfg.Docker), store: cfg.Store, tokens: cfg.Tokens, tickets: auth.NewTickets(), throttle: auth.NewThrottle(), basePath: basePath}
+	s := &server{docker: cfg.Docker, stats: newStatsHub(cfg.Docker), store: cfg.Store, tokens: cfg.Tokens, tickets: auth.NewTickets(), throttle: auth.NewThrottle(), webhooks: cfg.Webhooks, basePath: basePath}
 	v1 := r.Group(basePath + "/api/v1")
 	v1.GET("/health", handleHealth)
 	v1.GET("/version", handleVersion)
@@ -85,6 +88,14 @@ func NewRouter(cfg Config) *gin.Engine {
 	v1.POST("/networks/:id/connect", s.handleNetworkConnect)
 	v1.POST("/networks/:id/disconnect", s.handleNetworkDisconnect)
 	v1.POST("/prune/:kind", s.handlePrune)
+	v1.GET("/webhooks", s.handleWebhooks)
+	v1.POST("/webhooks", s.handleWebhookCreate)
+	v1.GET("/webhooks/:id", s.handleWebhook)
+	v1.PATCH("/webhooks/:id", s.handleWebhookUpdate)
+	v1.DELETE("/webhooks/:id", s.handleWebhookDelete)
+	v1.POST("/webhooks/:id/test", s.handleWebhookTest)
+	v1.GET("/webhooks/:id/deliveries", s.handleDeliveries)
+	v1.POST("/deliveries/:id/redeliver", s.handleRedeliver)
 
 	return r
 }
