@@ -6,9 +6,10 @@ import { CreateContainerModal } from "../components/containers/CreateContainerMo
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
-import { api } from "../lib/api";
+import { api, getToken } from "../lib/api";
+import { basePath } from "../lib/basePath";
 import { bytes } from "../lib/containers";
-import { pullImage } from "../lib/pullStream";
+import { pullImage, streamSSE } from "../lib/pullStream";
 import { recentPulls, rememberPull } from "../lib/recentPulls";
 import type { Host, HistoryLayer, Image, ImageDetail, PullEvent } from "../types/api";
 
@@ -54,6 +55,65 @@ function CopyID({ id }: { id: string }) {
     }
   }
   return <button onClick={() => void copy()} title={id} className="font-mono text-[12px] text-link underline decoration-dotted">{shortID(id)}</button>;
+}
+
+function ImportModal({ close, done }: { close: () => void; done: () => void }) {
+  const { push } = useToast();
+  const [file, setFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [lines, setLines] = useState<string[]>([]);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const controller = useRef<AbortController | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  function choose(candidate: File | null) {
+    if (!candidate || busy) return;
+    if (!candidate.name.toLowerCase().endsWith(".tar")) {
+      setResult({ ok: false, message: "Choose a .tar image archive." });
+      return;
+    }
+    setFile(candidate); setResult(null); setLines([]);
+  }
+  async function load() {
+    if (!file) return;
+    setBusy(true); setResult(null); setLines([]);
+    const form = new FormData(); form.append("tar", file);
+    const ac = new AbortController(); controller.current = ac;
+    try {
+      await streamSSE("/images/import", form, {}, (name, data) => {
+        if (name === "import") setLines((current) => [...current, String((data as { stream?: string }).stream ?? "").trimEnd()]);
+        if (name === "done") {
+          const images = (data as { images?: string[] }).images ?? [];
+          setResult({ ok: true, message: images.length ? `Loaded ${images.join(", ")}.` : "Image archive loaded." });
+          done();
+        }
+        if (name === "error") throw new Error(String((data as { message?: string }).message ?? "import failed"));
+      }, ac.signal);
+    } catch (e) {
+      const message = ac.signal.aborted ? "Import cancelled." : e instanceof Error ? e.message : "import failed";
+      setResult({ ok: false, message });
+      if (!ac.signal.aborted) push(`Could not import image archive: ${message}`, "error");
+    } finally { setBusy(false); controller.current = null; }
+  }
+  return <div role="dialog" aria-modal="true" aria-labelledby="import-title" className="fixed inset-0 z-40 grid place-items-center bg-ink/45 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) close(); }}>
+    <div className="w-full max-w-lg rounded border border-line bg-panel p-5 shadow-lg">
+      <div className="flex items-center gap-3"><h2 id="import-title" className="m-0 text-lg">Import image archive</h2><button aria-label="Close import dialog" disabled={busy} onClick={close} className="ml-auto rounded px-2 text-xl text-muted hover:bg-paper hover:text-text">×</button></div>
+      <p className="mt-1 text-[12px] text-muted">Drop a Docker image <code>.tar</code> archive here, or select one from your computer.</p>
+      <input ref={fileInput} type="file" accept=".tar" aria-label="Image tarball" className="sr-only" onChange={(e) => choose(e.target.files?.[0] ?? null)} />
+      <div
+        role="button" tabIndex={0} aria-label="Choose image tarball" onClick={() => !busy && fileInput.current?.click()}
+        onKeyDown={(e) => { if (!busy && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); fileInput.current?.click(); } }}
+        onDragOver={(e) => { if (!busy) { e.preventDefault(); setDragging(true); } }} onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); choose(e.dataTransfer.files?.[0] ?? null); }}
+        className={`mt-4 cursor-pointer rounded border-2 border-dashed px-5 py-8 text-center text-[13px] ${dragging ? "border-link bg-[#EAF2F4]" : "border-line bg-paper hover:border-steel"} ${busy ? "cursor-not-allowed opacity-60" : ""}`}>
+        <span className="block font-medium text-text">{file ? file.name : "Drag and drop a .tar archive"}</span>
+        <span className="mt-1 block text-muted">{file ? "Click to choose a different file" : "or click to browse files"}</span>
+      </div>
+      {lines.length > 0 && <dl className="mt-4 max-h-[180px] overflow-auto text-[12px]">{lines.map((line, index) => <div key={`${index}-${line}`} className="flex gap-3 border-b border-linesoft py-1"><dt className="font-mono text-muted">stream</dt><dd className="min-w-0 break-all">{line}</dd></div>)}</dl>}
+      {result && <p className={`mt-3 text-[13px] ${result.ok ? "text-run" : "text-fail"}`} role="status">{result.ok ? "✓ " : ""}{result.message}</p>}
+      <div className="mt-5 flex justify-end gap-2"><Button onClick={close} disabled={busy}>Close</Button>{busy ? <Button variant="danger" onClick={() => controller.current?.abort()}>Cancel</Button> : <Button variant="primary" disabled={!file || !!result?.ok} onClick={() => void load()}>Load</Button>}</div>
+    </div>
+  </div>;
 }
 
 function PullDialog({ close, done }: { close: () => void; done: () => void }) {
@@ -242,6 +302,7 @@ function UsedByCell({ image }: { image: Image }) {
 
 export function ImagesPage() {
   const queryClient = useQueryClient();
+  const { push } = useToast();
   const filterRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("created");
@@ -252,11 +313,35 @@ export function ImagesPage() {
   const [remove, setRemove] = useState<Image | null>(null);
   const [prune, setPrune] = useState(false);
   const [runImage, setRunImage] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [importOpen, setImportOpen] = useState(false);
 
   const path = imagesQuery({ q, sort });
   const images = useQuery({ queryKey: ["images", q, sort], queryFn: () => api.get<Image[]>(path), refetchInterval: 5000 });
   const rows = images.data ?? [];
+  const selectableRefs = Array.from(new Set(rows.flatMap((image) => (image.repo_tags.length ? image.repo_tags : [image.id]).map((tag) => tag === "<none>:<none>" ? image.id : tag))));
   const refresh = () => { void queryClient.invalidateQueries({ queryKey: ["images"] }); void queryClient.invalidateQueries({ queryKey: ["host"] }); };
+
+  function toggleSelection(ref: string, checked: boolean) {
+    setSelected((current) => { const next = new Set(current); if (checked) next.add(ref); else next.delete(ref); return next; });
+  }
+  function toggleAll(checked: boolean) { setSelected(checked ? new Set(selectableRefs) : new Set()); }
+  async function exportImages() {
+    const refs = selected.size ? [...selected] : selectableRefs;
+    if (!refs.length) return;
+    const params = new URLSearchParams(); refs.forEach((ref) => params.append("ref", ref));
+    const base = basePath(); const token = getToken();
+    const response = await fetch(`${base === "/" ? "" : base}/api/v1/images/export?${params}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!response.ok) {
+      let message = response.statusText;
+      try { message = (await response.json()).error?.message ?? message; } catch { /* retain status */ }
+      throw new Error(message || "export failed");
+    }
+    const blob = await response.blob();
+    const match = /filename="?([^";]+)"?/i.exec(response.headers.get("Content-Disposition") ?? "");
+    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = match?.[1] ?? "vessel-images.tar";
+    document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
+  }
 
   function actions(image: Image) {
     return <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
@@ -280,12 +365,17 @@ export function ImagesPage() {
       <label className="ml-1 flex items-center gap-1.5 text-[13px]"><input type="checkbox" checked={grouped} onChange={(e) => setGrouped(e.target.checked)} /> group by image</label>
       <span className="flex-1" />
       <Can do="prune.run"><Button onClick={() => setPrune(true)}>Prune unused</Button></Can>
+      <Can do="images.export"><Button onClick={() => void exportImages().catch((e: unknown) => { const message = e instanceof Error ? e.message : "export failed"; push(`Could not export images: ${message}`, "error"); })}>Export selected</Button></Can>
+      <Can do="images.import"><Button onClick={() => setImportOpen(true)}>Import</Button></Can>
       <Can do="images.pull"><Button variant="primary" onClick={() => setPull(true)}>Pull image</Button></Can>
     </div>
+    {importOpen && <ImportModal close={() => setImportOpen(false)} done={refresh} />}
+    {selected.size > 0 && <div className="mb-2 flex items-center gap-2.5 rounded bg-hull px-3 py-2 text-[13px] text-white"><span>{selected.size} selected</span><span className="flex-1" /><Button className="border-white/35 bg-transparent text-white hover:bg-white/10" onClick={() => setSelected(new Set())}>Clear</Button></div>}
     <div className="overflow-x-auto rounded border border-line bg-panel">
       {images.isLoading ? <EmptyState title="Loading images" action="Contacting Docker…" /> : rows.length === 0 ? <EmptyState title="No images found" action="Pull an image, or broaden the current filter." /> : <table className="w-full min-w-[860px] border-collapse text-[13px]">
         <thead className="border-b border-line bg-paper text-left text-[11.5px] uppercase tracking-wide text-muted">
           <tr>
+            <th className="w-[26px] px-2"><input type="checkbox" aria-label="Select all images" checked={selectableRefs.length > 0 && selectableRefs.every((ref) => selected.has(ref))} onChange={(e) => toggleAll(e.target.checked)} /></th>
             <th className="px-2">Repository</th>
             <th className="px-2">Tag</th>
             <th className="px-2"><button onClick={() => setSort("name")}>Image ID</button></th>
@@ -301,7 +391,9 @@ export function ImagesPage() {
           if (!grouped) {
             return tags.map((fullTag) => {
               const [repo, tag] = splitRepoTag(fullTag);
+              const ref = fullTag === "<none>:<none>" ? image.id : fullTag;
               return <tr key={`${image.id}-${fullTag}`} className="group h-row border-b border-linesoft last:border-0 hover:bg-paper">
+                <td className="px-2 align-middle"><input type="checkbox" aria-label={`Select ${ref}`} checked={selected.has(ref)} onChange={(e) => toggleSelection(ref, e.target.checked)} /></td>
                 <td className="max-w-[220px] truncate px-2 align-middle font-medium"><Link to={`/images/${encodeURIComponent(image.id)}`}>{repo}</Link></td>
                 <td className="px-2 align-middle">{tagCell(image, fullTag, tag)}</td>
                 <td className="px-2 align-middle"><CopyID id={image.id} /></td>
@@ -315,8 +407,10 @@ export function ImagesPage() {
           const groupBorder = isLastImage ? "" : "border-b border-linesoft";
           return tags.map((fullTag, i) => {
             const [repo, tag] = splitRepoTag(fullTag);
+            const ref = fullTag === "<none>:<none>" ? image.id : fullTag;
             const last = i === tags.length - 1;
             return <tr key={`${image.id}-${fullTag}`} className={`group h-row hover:bg-paper ${last ? groupBorder : ""}`}>
+              <td className={`px-2 align-middle ${last ? "" : "border-b border-transparent"}`}><input type="checkbox" aria-label={`Select ${ref}`} checked={selected.has(ref)} onChange={(e) => toggleSelection(ref, e.target.checked)} /></td>
               <td className={`max-w-[220px] truncate px-2 align-middle font-medium ${last ? "" : "border-b border-transparent"}`}><Link to={`/images/${encodeURIComponent(image.id)}`}>{repo}</Link></td>
               <td className={`px-2 align-middle ${last ? "" : "border-b border-transparent"}`}>{tagCell(image, fullTag, tag)}</td>
               {i === 0 && <td rowSpan={tags.length} className={`px-2 align-middle ${groupBorder}`}><CopyID id={image.id} /></td>}

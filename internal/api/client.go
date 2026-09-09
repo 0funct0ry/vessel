@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"io"
 	"net/url"
 
 	"github.com/0funct0ry/vessel/internal/dockerapi"
@@ -22,6 +23,8 @@ type DockerClient interface {
 	ListImages(context.Context, bool) ([]dockerapi.Image, error)
 	InspectImage(context.Context, string) (*dockerapi.ImageDetail, error)
 	History(context.Context, string) ([]dockerapi.HistoryLayer, error)
+	ExportImages(context.Context, []string) (io.ReadCloser, error)
+	ImportImages(context.Context, io.Reader) (dockerapi.ImportStream, error)
 	ListVolumes(context.Context) ([]dockerapi.Volume, error)
 	InspectVolume(context.Context, string) (*dockerapi.Volume, error)
 	ListNetworks(context.Context) ([]dockerapi.Network, error)

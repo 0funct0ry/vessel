@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -17,6 +18,8 @@ import (
 
 	"github.com/0funct0ry/vessel/internal/dockerapi"
 )
+
+var loadedImageRE = regexp.MustCompile(`(?m)^Loaded image: ([^\s]+)\s*$`)
 
 var resourceNameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`)
 var imageReferenceRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:/-]*(?::[a-zA-Z0-9][a-zA-Z0-9_.-]*|@[A-Za-z0-9_+.-]+:[A-Fa-f0-9]+)?$`)
@@ -250,6 +253,81 @@ func (s *server) handleImagePull(c *gin.Context) {
 			}
 			if err := send("pull", payload); err != nil {
 				return err
+			}
+		}
+	})
+}
+
+func (s *server) handleImageExport(c *gin.Context) {
+	refs := c.QueryArray("ref")
+	if len(refs) == 0 {
+		Fail(c, invalidQuery("at least one ref is required"))
+		return
+	}
+	for _, ref := range refs {
+		if !imageReferenceRE.MatchString(ref) {
+			Fail(c, invalidImageReference("ref must be repo[:tag|@digest] or image ID"))
+			return
+		}
+	}
+	archive, err := s.docker.ExportImages(c.Request.Context(), refs)
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	defer archive.Close()
+	c.Header("Content-Type", "application/x-tar")
+	c.Header("Content-Disposition", `attachment; filename="vessel-images-`+strconv.FormatInt(time.Now().Unix(), 10)+`.tar"`)
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, archive)
+}
+
+func (s *server) handleImageImport(c *gin.Context) {
+	mediaType, _, err := mime.ParseMediaType(c.GetHeader("Content-Type"))
+	if err != nil || mediaType != "multipart/form-data" {
+		Fail(c, invalidInput("Content-Type must be multipart/form-data"))
+		return
+	}
+	reader, err := c.Request.MultipartReader()
+	if err != nil {
+		Fail(c, invalidInput("invalid multipart upload"))
+		return
+	}
+	part, err := reader.NextPart()
+	if err != nil {
+		Fail(c, invalidInput("tar file is required"))
+		return
+	}
+	defer part.Close()
+	if part.FormName() != "tar" || part.FileName() == "" || !strings.HasSuffix(strings.ToLower(part.FileName()), ".tar") {
+		Fail(c, invalidInput("tar must be a .tar file upload"))
+		return
+	}
+	Stream(c, func(send func(string, any) error) error {
+		stream, err := s.docker.ImportImages(c.Request.Context(), part)
+		if err != nil {
+			return err
+		}
+		defer stream.Close()
+		loaded := []string{}
+		for {
+			line, err := stream.Next()
+			if errors.Is(err, io.EOF) {
+				return send("done", gin.H{"images": loaded})
+			}
+			if err != nil {
+				return err
+			}
+			if line.Error != "" {
+				return errors.New(line.Error)
+			}
+			if line.Stream != "" {
+				for _, match := range loadedImageRE.FindAllStringSubmatch(line.Stream, -1) {
+					loaded = append(loaded, match[1])
+				}
+				if err := send("import", gin.H{"stream": line.Stream}); err != nil {
+					return err
+				}
 			}
 		}
 	})

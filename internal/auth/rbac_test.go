@@ -15,6 +15,8 @@ func TestRequiredRole(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/v1/containers/abc/logs", store.RoleViewer, true},
 		{http.MethodPost, "/api/v1/containers/abc/stop", store.RoleOperator, true},
+		{http.MethodGet, "/api/v1/images/export", store.RoleOperator, true},
+		{http.MethodPost, "/api/v1/images/import", store.RoleOperator, true},
 		{http.MethodPost, "/api/v1/prune/images", store.RoleAdmin, true},
 		{http.MethodGet, "/api/v1/health", "", false},
 		{http.MethodPut, "/api/v1/containers/abc", "", false},
@@ -43,6 +45,9 @@ func TestAllowsAndCapabilities(t *testing.T) {
 	operator := Capabilities(store.RoleOperator)
 	if !operator["containers.stop"] || operator["prune.run"] {
 		t.Fatalf("operator capabilities = %#v", operator)
+	}
+	if !operator["images.export"] || !operator["images.import"] || viewer["images.export"] || viewer["images.import"] {
+		t.Fatalf("image archive capabilities incorrect: operator=%#v viewer=%#v", operator, viewer)
 	}
 	admin := Capabilities(store.RoleAdmin)
 	if !admin["prune.run"] || !admin["images.remove"] {

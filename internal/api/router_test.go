@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,9 @@ type fakeDockerClient struct {
 	images         []dockerapi.Image
 	image          *dockerapi.ImageDetail
 	history        []dockerapi.HistoryLayer
+	export         io.ReadCloser
+	importStream   dockerapi.ImportStream
+	importBody     []byte
 	volumes        []dockerapi.Volume
 	volume         *dockerapi.Volume
 	networks       []dockerapi.Network
@@ -113,6 +117,13 @@ func (f *fakeDockerClient) InspectImage(context.Context, string) (*dockerapi.Ima
 
 func (f *fakeDockerClient) History(context.Context, string) ([]dockerapi.HistoryLayer, error) {
 	return f.history, f.err
+}
+func (f *fakeDockerClient) ExportImages(context.Context, []string) (io.ReadCloser, error) {
+	return f.export, f.err
+}
+func (f *fakeDockerClient) ImportImages(_ context.Context, tar io.Reader) (dockerapi.ImportStream, error) {
+	f.importBody, _ = io.ReadAll(tar)
+	return f.importStream, f.err
 }
 
 func (f *fakeDockerClient) ListVolumes(context.Context) ([]dockerapi.Volume, error) {

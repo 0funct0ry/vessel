@@ -108,18 +108,40 @@ func (c *Client) doStream(ctx context.Context, method, path string, body []byte)
 	return resp, nil
 }
 
+// doStreamReader is the streaming counterpart to doStream for endpoints that
+// accept an arbitrarily large request body. Unlike doStream it intentionally
+// cannot retry after API-version negotiation: readers such as multipart file
+// parts are single-use and must never be buffered merely to retry an upload.
+func (c *Client) doStreamReader(ctx context.Context, method, path string, body io.Reader, contentType string) (*http.Response, error) {
+	client := *c.httpClient
+	client.Timeout = 0
+	resp, err := c.doOnceReader(ctx, method, path, body, contentType, &client)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, mapError(resp)
+	}
+	return resp, nil
+}
+
 func (c *Client) doOnceWithClient(ctx context.Context, method, path string, body []byte, client *http.Client) (*http.Response, error) {
 	var reqBody io.Reader
 	if body != nil {
 		reqBody = bytes.NewReader(body)
 	}
+	return c.doOnceReader(ctx, method, path, reqBody, "application/json", client)
+}
+
+func (c *Client) doOnceReader(ctx context.Context, method, path string, body io.Reader, contentType string, client *http.Client) (*http.Response, error) {
+	var reqBody io.Reader = body
 
 	req, err := http.NewRequestWithContext(ctx, method, c.url(path), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("dockerapi: building request: %w", err)
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if body != nil && contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 
 	resp, err := client.Do(req)

@@ -12,17 +12,17 @@ function apiRoot(): string {
  * ReadableStream, which is also what makes cancellation via AbortController
  * possible.
  */
-export async function pullImage(reference: string, onEvent: (name: string, data: unknown) => void, signal: AbortSignal): Promise<void> {
+export async function streamSSE(path: string, body: BodyInit, headers: HeadersInit, onEvent: (name: string, data: unknown) => void, signal: AbortSignal): Promise<void> {
   const token = getToken();
-  const response = await fetch(`${apiRoot()}/images/pull`, {
+  const response = await fetch(`${apiRoot()}${path}`, {
     method: "POST",
     signal,
     headers: {
-      "Content-Type": "application/json",
       Accept: "text/event-stream",
+      ...headers,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ reference }),
+    body,
   });
 
   if (!response.ok || !response.body) {
@@ -33,7 +33,7 @@ export async function pullImage(reference: string, onEvent: (name: string, data:
     } catch {
       // non-JSON error body; keep statusText
     }
-    throw new Error(message || "pull failed");
+    throw new Error(message || "stream failed");
   }
 
   const reader = response.body.getReader();
@@ -65,4 +65,8 @@ export async function pullImage(reference: string, onEvent: (name: string, data:
       at = buffer.indexOf("\n\n");
     }
   }
+}
+
+export async function pullImage(reference: string, onEvent: (name: string, data: unknown) => void, signal: AbortSignal): Promise<void> {
+  return streamSSE("/images/pull", JSON.stringify({ reference }), { "Content-Type": "application/json" }, onEvent, signal);
 }
