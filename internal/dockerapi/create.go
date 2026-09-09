@@ -1,0 +1,147 @@
+package dockerapi
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+)
+
+// PortSpec describes one container port and its optional published host port.
+type PortSpec struct{ Container, Host, Protocol string }
+
+// MountSpec describes a named-volume or bind mount.
+type MountSpec struct {
+	Source, Target, Type string
+	ReadOnly             bool
+}
+
+// Spec is Vessel's deliberately small container-provisioning surface.
+type Spec struct {
+	Name, Image            string
+	Command, Entrypoint    []string
+	Env                    []string
+	Ports                  []PortSpec
+	Mounts                 []MountSpec
+	Network, RestartPolicy string
+	Labels                 map[string]string
+	Start                  bool
+}
+
+type CreateResult struct {
+	ID       string
+	Warnings []string
+}
+
+// StartError means Docker created the container but could not start it.
+// Callers can use the result to direct the user to the newly-created container.
+type StartError struct {
+	Result CreateResult
+	Err    error
+}
+
+func (e *StartError) Error() string {
+	return fmt.Sprintf("dockerapi: starting created container %s: %v", e.Result.ID, e.Err)
+}
+func (e *StartError) Unwrap() error { return e.Err }
+
+func portKey(port PortSpec) string {
+	protocol := strings.ToLower(strings.TrimSpace(port.Protocol))
+	if protocol == "" {
+		protocol = "tcp"
+	}
+	return strings.TrimSpace(port.Container) + "/" + protocol
+}
+
+// CreateContainer translates Spec to Docker's POST /containers/create body.
+func (c *Client) CreateContainer(ctx context.Context, spec Spec) (CreateResult, error) {
+	type binding struct {
+		HostPort string `json:"HostPort"`
+	}
+	type mount struct {
+		Type     string `json:"Type"`
+		Source   string `json:"Source"`
+		Target   string `json:"Target"`
+		ReadOnly bool   `json:"ReadOnly,omitempty"`
+	}
+	type restart struct {
+		Name string `json:"Name,omitempty"`
+	}
+	request := struct {
+		Image        string              `json:"Image"`
+		Cmd          []string            `json:"Cmd,omitempty"`
+		Entrypoint   []string            `json:"Entrypoint,omitempty"`
+		Env          []string            `json:"Env,omitempty"`
+		ExposedPorts map[string]struct{} `json:"ExposedPorts,omitempty"`
+		Labels       map[string]string   `json:"Labels,omitempty"`
+		HostConfig   struct {
+			PortBindings  map[string][]binding `json:"PortBindings,omitempty"`
+			Binds         []string             `json:"Binds,omitempty"`
+			Mounts        []mount              `json:"Mounts,omitempty"`
+			NetworkMode   string               `json:"NetworkMode,omitempty"`
+			RestartPolicy restart              `json:"RestartPolicy,omitempty"`
+		} `json:"HostConfig"`
+	}{Image: spec.Image, Cmd: spec.Command, Entrypoint: spec.Entrypoint, Env: spec.Env, Labels: spec.Labels}
+	for _, p := range spec.Ports {
+		key := portKey(p)
+		if strings.TrimSpace(p.Container) == "" {
+			continue
+		}
+		if request.ExposedPorts == nil {
+			request.ExposedPorts = map[string]struct{}{}
+		}
+		request.ExposedPorts[key] = struct{}{}
+		if strings.TrimSpace(p.Host) != "" {
+			if request.HostConfig.PortBindings == nil {
+				request.HostConfig.PortBindings = map[string][]binding{}
+			}
+			request.HostConfig.PortBindings[key] = append(request.HostConfig.PortBindings[key], binding{HostPort: p.Host})
+		}
+	}
+	for _, item := range spec.Mounts {
+		if item.Type == "bind" {
+			bind := item.Source + ":" + item.Target
+			if item.ReadOnly {
+				bind += ":ro"
+			}
+			request.HostConfig.Binds = append(request.HostConfig.Binds, bind)
+		} else {
+			request.HostConfig.Mounts = append(request.HostConfig.Mounts, mount{Type: "volume", Source: item.Source, Target: item.Target, ReadOnly: item.ReadOnly})
+		}
+	}
+	request.HostConfig.NetworkMode = spec.Network
+	request.HostConfig.RestartPolicy = restart{Name: spec.RestartPolicy}
+	body, err := json.Marshal(request)
+	if err != nil {
+		return CreateResult{}, fmt.Errorf("dockerapi: encoding container create: %w", err)
+	}
+	path := "/containers/create"
+	if spec.Name != "" {
+		path += "?" + url.Values{"name": {spec.Name}}.Encode()
+	}
+	resp, err := c.do(ctx, http.MethodPost, path, body)
+	if err != nil {
+		return CreateResult{}, err
+	}
+	defer resp.Body.Close()
+	var wire struct {
+		ID       string   `json:"Id"`
+		Warnings []string `json:"Warnings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
+		return CreateResult{}, fmt.Errorf("dockerapi: decoding created container: %w", err)
+	}
+	warnings := wire.Warnings
+	if warnings == nil {
+		warnings = []string{}
+	}
+	result := CreateResult{ID: wire.ID, Warnings: warnings}
+	if spec.Start {
+		if err := c.Lifecycle(ctx, result.ID, "start", nil); err != nil {
+			return result, &StartError{Result: result, Err: err}
+		}
+	}
+	return result, nil
+}

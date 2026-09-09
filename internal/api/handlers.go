@@ -127,6 +127,85 @@ func (s *server) handleContainerRemove(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (s *server) handleContainerCreate(c *gin.Context) {
+	var body struct {
+		Name       string   `json:"name"`
+		Image      string   `json:"image"`
+		Command    []string `json:"command"`
+		Entrypoint []string `json:"entrypoint"`
+		Env        []string `json:"env"`
+		Ports      []struct {
+			Container string `json:"container"`
+			Host      string `json:"host"`
+			Protocol  string `json:"protocol"`
+		} `json:"ports"`
+		Mounts []struct {
+			Source   string `json:"source"`
+			Target   string `json:"target"`
+			Type     string `json:"type"`
+			ReadOnly bool   `json:"ro"`
+		} `json:"mounts"`
+		Network       string            `json:"network"`
+		RestartPolicy string            `json:"restart_policy"`
+		Labels        map[string]string `json:"labels"`
+		Start         bool              `json:"start"`
+	}
+	if err := decodeBody(c, &body); err != nil {
+		Fail(c, err)
+		return
+	}
+	if body.Name != "" {
+		if err := validResourceName(body.Name); err != nil {
+			Fail(c, err)
+			return
+		}
+	}
+	if !imageReferenceRE.MatchString(body.Image) {
+		Fail(c, invalidImageReference("image must be repo[:tag|@digest]"))
+		return
+	}
+	if body.Network != "" {
+		networks, err := s.docker.ListNetworks(c.Request.Context())
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		found := false
+		for _, network := range networks {
+			// Docker's default bridge is conventionally addressed by name in
+			// NetworkMode, while user-selected networks use their stable IDs.
+			if network.ID == body.Network || (body.Network == "bridge" && network.Name == "bridge") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			Fail(c, invalidInput("network must identify an existing network"))
+			return
+		}
+	}
+	spec := dockerapi.Spec{Name: body.Name, Image: body.Image, Command: body.Command, Entrypoint: body.Entrypoint, Env: body.Env, Network: body.Network, RestartPolicy: body.RestartPolicy, Labels: body.Labels, Start: body.Start}
+	for _, p := range body.Ports {
+		spec.Ports = append(spec.Ports, dockerapi.PortSpec{Container: p.Container, Host: p.Host, Protocol: p.Protocol})
+	}
+	for _, m := range body.Mounts {
+		spec.Mounts = append(spec.Mounts, dockerapi.MountSpec{Source: m.Source, Target: m.Target, Type: m.Type, ReadOnly: m.ReadOnly})
+	}
+	result, err := s.docker.CreateContainer(c.Request.Context(), spec)
+	response := gin.H{"id": result.ID, "name": body.Name, "warnings": result.Warnings}
+	var startErr *dockerapi.StartError
+	if errors.As(err, &startErr) {
+		response["start_error"] = dockerMessage(startErr)
+		c.JSON(http.StatusCreated, response)
+		return
+	}
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, response)
+}
+
 func (s *server) handleImagePull(c *gin.Context) {
 	var body struct {
 		Reference string `json:"reference"`

@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Can } from "../auth/Can";
+import { CreateContainerModal } from "../components/containers/CreateContainerModal";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
@@ -250,6 +251,7 @@ export function ImagesPage() {
   const [untag, setUntag] = useState<{ image: Image; tag: string } | null>(null);
   const [remove, setRemove] = useState<Image | null>(null);
   const [prune, setPrune] = useState(false);
+  const [runImage, setRunImage] = useState("");
 
   const path = imagesQuery({ q, sort });
   const images = useQuery({ queryKey: ["images", q, sort], queryFn: () => api.get<Image[]>(path), refetchInterval: 5000 });
@@ -258,6 +260,7 @@ export function ImagesPage() {
 
   function actions(image: Image) {
     return <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+      <Can do="containers.create"><button className={ROW_ACTION} onClick={() => setRunImage(image.repo_tags.find((tag) => tag !== "<none>:<none>") ?? "")}>run</button></Can>
       <Can do="images.tag"><button className={ROW_ACTION} onClick={() => setTag(image)}>tag</button></Can>
       <Can do="images.remove"><button className={ROW_ACTION_DANGER} onClick={() => setRemove(image)}>remove</button></Can>
     </div>;
@@ -331,6 +334,7 @@ export function ImagesPage() {
     {untag && <UntagDialog image={untag.image} tag={untag.tag} close={() => setUntag(null)} done={refresh} />}
     {remove && <RemoveDialog image={remove} close={() => setRemove(null)} done={refresh} />}
     {prune && <PruneDialog close={() => setPrune(false)} done={refresh} />}
+    {runImage !== "" && <CreateContainerModal image={runImage} close={() => setRunImage("")} />}
   </section>;
 }
 
@@ -358,6 +362,7 @@ export function ImageDetailPage() {
   const { id = "" } = useParams();
   const { push } = useToast();
   const [tabName, setTabName] = useState("overview");
+  const [run, setRun] = useState(false);
   const detail = useQuery({ queryKey: ["image", id], queryFn: () => api.get<ImageDetail>(`/images/${encodeURIComponent(id)}`) });
   const image = detail.data;
   if (detail.isLoading) return <EmptyState title="Loading image" action="Contacting Docker…" />;
@@ -374,6 +379,7 @@ export function ImageDetailPage() {
     <div className="mb-3 flex items-center gap-3">
       <h1 className="m-0 text-lg">{image.repo_tags[0] ? displayTag(image.repo_tags[0]) : "<none>"}</h1>
       <span className="font-mono text-[12px] text-muted">{shortID(image.id)}</span>
+      <span className="flex-1" /><Can do="containers.create"><Button variant="primary" disabled={!image.repo_tags[0] || image.repo_tags[0] === "<none>:<none>"} onClick={() => setRun(true)}>Run</Button></Can>
     </div>
     <div role="tablist" className="mb-4 flex gap-1 border-b border-line">{["overview", "history", "inspect"].map((name) => <button key={name} role="tab" aria-selected={tabName === name} onClick={() => setTabName(name)} className={`px-3 py-2 text-[13px] capitalize ${tabName === name ? "border-b-2 border-hull font-medium" : "text-muted"}`}>{name}</button>)}</div>
     {tabName === "overview" && <div className="grid gap-3 md:grid-cols-2">
@@ -387,5 +393,6 @@ export function ImageDetailPage() {
     </div>}
     {tabName === "history" && <HistoryTab id={image.id} />}
     {tabName === "inspect" && <div><div className="mb-2 flex items-center"><span className="text-[13px] text-muted">Full engine response</span><Button className="ml-auto" onClick={() => void copy()}>Copy JSON</Button></div><pre className="max-h-[65vh] overflow-auto rounded border border-line bg-ink p-4 text-[12px] text-[#D7E7EA]">{JSON.stringify(image.raw, null, 2)}</pre></div>}
+    {run && <CreateContainerModal image={image.repo_tags[0]} close={() => setRun(false)} />}
   </section>;
 }

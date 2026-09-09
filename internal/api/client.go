@@ -29,6 +29,7 @@ type DockerClient interface {
 	Lifecycle(context.Context, string, string, url.Values) error
 	RenameContainer(context.Context, string, string) error
 	RemoveContainer(context.Context, string, dockerapi.RemoveContainerOptions) error
+	CreateContainer(context.Context, dockerapi.Spec) (dockerapi.CreateResult, error)
 	PullImage(context.Context, string) (dockerapi.PullStream, error)
 	TagImage(context.Context, string, string, string) error
 	RemoveImage(context.Context, string, dockerapi.RemoveImageOptions) error

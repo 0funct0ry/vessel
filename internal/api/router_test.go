@@ -43,6 +43,9 @@ type fakeDockerClient struct {
 	statsCalls     []string
 	execCalls      []dockerapi.ExecOptions
 	execCreate     func(dockerapi.ExecOptions) (string, error)
+	createSpec     dockerapi.Spec
+	createResult   dockerapi.CreateResult
+	createErr      error
 }
 
 func newFakeDockerClient() *fakeDockerClient {
@@ -132,6 +135,16 @@ func (f *fakeDockerClient) Lifecycle(context.Context, string, string, url.Values
 func (f *fakeDockerClient) RenameContainer(context.Context, string, string) error       { return f.err }
 func (f *fakeDockerClient) RemoveContainer(context.Context, string, dockerapi.RemoveContainerOptions) error {
 	return f.err
+}
+func (f *fakeDockerClient) CreateContainer(_ context.Context, spec dockerapi.Spec) (dockerapi.CreateResult, error) {
+	f.createSpec = spec
+	if f.createResult.ID == "" {
+		f.createResult.ID = "new-container"
+	}
+	if f.createErr != nil {
+		return f.createResult, f.createErr
+	}
+	return f.createResult, f.err
 }
 func (f *fakeDockerClient) PullImage(context.Context, string) (dockerapi.PullStream, error) {
 	return f.pull, f.err

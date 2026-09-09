@@ -37,6 +37,9 @@ func invalidInput(format string, args ...any) error {
 func invalidName(format string, args ...any) error {
 	return &validationError{code: "invalid_name", message: fmt.Sprintf(format, args...)}
 }
+func invalidImageReference(format string, args ...any) error {
+	return &validationError{code: "invalid_image_reference", message: fmt.Sprintf(format, args...)}
+}
 
 func (e *queryError) Error() string { return e.message }
 
