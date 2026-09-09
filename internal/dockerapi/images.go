@@ -71,6 +71,32 @@ type imageInspectResponse struct {
 	} `json:"Config"`
 }
 
+// HistoryLayer is one entry from GET /images/{name}/history.
+type HistoryLayer struct {
+	ID        string   `json:"Id"`
+	Created   int64    `json:"Created"`
+	CreatedBy string   `json:"CreatedBy"`
+	Size      int64    `json:"Size"`
+	Comment   string   `json:"Comment"`
+	Tags      []string `json:"Tags"`
+}
+
+// History calls GET /images/{name}/history, returning the image's layers
+// ordered newest-first, as Docker returns them.
+func (c *Client) History(ctx context.Context, name string) ([]HistoryLayer, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/images/"+url.PathEscape(name)+"/history", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var layers []HistoryLayer
+	if err := json.NewDecoder(resp.Body).Decode(&layers); err != nil {
+		return nil, fmt.Errorf("dockerapi: decoding /images/history response: %w", err)
+	}
+	return layers, nil
+}
+
 // InspectImage calls GET /images/{name}/json.
 func (c *Client) InspectImage(ctx context.Context, name string) (*ImageDetail, error) {
 	resp, err := c.do(ctx, http.MethodGet, "/images/"+url.PathEscape(name)+"/json", nil)

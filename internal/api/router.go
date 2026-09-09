@@ -89,6 +89,7 @@ func NewRouter(cfg Config) *gin.Engine {
 	v1.DELETE("/containers/:id", s.handleContainerRemove)
 	v1.GET("/images", s.handleImages)
 	v1.GET("/images/:id", s.handleImage)
+	v1.GET("/images/:id/history", s.handleImageHistory)
 	v1.POST("/images/pull", s.handleImagePull)
 	v1.POST("/images/:id/tag", s.handleImageTag)
 	v1.DELETE("/images/:id", s.handleImageRemove)

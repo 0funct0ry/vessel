@@ -26,6 +26,7 @@ type fakeDockerClient struct {
 	top            *dockerapi.TopEntry
 	images         []dockerapi.Image
 	image          *dockerapi.ImageDetail
+	history        []dockerapi.HistoryLayer
 	volumes        []dockerapi.Volume
 	volume         *dockerapi.Volume
 	networks       []dockerapi.Network
@@ -105,6 +106,10 @@ func (f *fakeDockerClient) ListImages(context.Context, bool) ([]dockerapi.Image,
 
 func (f *fakeDockerClient) InspectImage(context.Context, string) (*dockerapi.ImageDetail, error) {
 	return f.image, f.err
+}
+
+func (f *fakeDockerClient) History(context.Context, string) ([]dockerapi.HistoryLayer, error) {
+	return f.history, f.err
 }
 
 func (f *fakeDockerClient) ListVolumes(context.Context) ([]dockerapi.Volume, error) {
@@ -223,6 +228,24 @@ func TestImageListEnrichmentExactJSON(t *testing.T) {
 	}
 }
 
+func TestImageHistoryJSON(t *testing.T) {
+	fake := newFakeDockerClient()
+	fake.history = []dockerapi.HistoryLayer{
+		{ID: "sha256:top", Created: 200, CreatedBy: `CMD ["sh"]`, Size: 10, Tags: []string{"acme/app:1"}},
+		{ID: "<missing>", Created: 100, CreatedBy: "ADD file:abc in /", Size: 5},
+	}
+	router := NewRouter(Config{Docker: fake})
+
+	response := performRequest(router, http.MethodGet, "/api/v1/images/img/history")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", response.Code, response.Body.String())
+	}
+	assertJSON(t, response.Body.String(), `[
+		{"id":"sha256:top","created":200,"created_by":"CMD [\"sh\"]","size":10,"comment":"","tags":["acme/app:1"]},
+		{"id":"<missing>","created":100,"created_by":"ADD file:abc in /","size":5,"comment":"","tags":[]}
+	]`)
+}
+
 func TestVolumeListJoinExactJSON(t *testing.T) {
 	fake := newFakeDockerClient()
 	fake.volumes = []dockerapi.Volume{{
@@ -278,7 +301,7 @@ func TestHostAndTopJSON(t *testing.T) {
 	router := NewRouter(Config{Docker: fake})
 
 	response := performRequest(router, http.MethodGet, "/api/v1/host")
-	assertJSON(t, response.Body.String(), `{"id":"host1","server_version":"27.1","api_version":"1.47","min_api_version":"1.24","operating_system":"Linux","os_type":"linux","architecture":"arm64","kernel_version":"6.8","cpus":8,"memory_bytes":17179869184,"cpu_pct":0,"memory":{"used":0,"limit":0},"containers":{"total":4,"running":2,"paused":1,"stopped":1},"images":7,"disk":{"images":920,"containers":10,"volumes":0,"build_cache":3,"reclaimable":933}}`)
+	assertJSON(t, response.Body.String(), `{"id":"host1","server_version":"27.1","api_version":"1.47","min_api_version":"1.24","operating_system":"Linux","os_type":"linux","architecture":"arm64","kernel_version":"6.8","cpus":8,"memory_bytes":17179869184,"cpu_pct":0,"memory":{"used":0,"limit":0},"containers":{"total":4,"running":2,"paused":1,"stopped":1},"images":7,"disk":{"images":920,"containers":10,"volumes":0,"build_cache":3,"reclaimable":933,"images_reclaimable":920,"containers_reclaimable":10,"volumes_reclaimable":0,"build_cache_reclaimable":3}}`)
 
 	response = performRequest(router, http.MethodGet, "/api/v1/containers/c1/top?ps_args=aux")
 	assertJSON(t, response.Body.String(), `{"titles":["PID","CMD"],"processes":[["1","/app"]]}`)
@@ -417,7 +440,7 @@ func TestRemainingReadRoutes(t *testing.T) {
 	}
 
 	response := performRequest(router, http.MethodGet, "/api/v1/images/img")
-	assertJSON(t, response.Body.String(), `{"id":"img","repo_tags":["acme/api:1"],"repo_digests":[],"created":"now","size":5,"architecture":"arm64","os":"linux","env":[],"entrypoint":[],"cmd":[],"labels":{},"used_by_count":1,"dangling":false,"raw":{"Id":"img"}}`)
+	assertJSON(t, response.Body.String(), `{"id":"img","repo_tags":["acme/api:1"],"repo_digests":[],"created":"now","size":5,"architecture":"arm64","os":"linux","env":[],"entrypoint":[],"cmd":[],"labels":{},"used_by_count":1,"used_by":[{"container_id":"c1","container_name":"api","state":""}],"dangling":false,"raw":{"Id":"img"}}`)
 	response = performRequest(router, http.MethodGet, "/api/v1/volumes/data")
 	assertJSON(t, response.Body.String(), `{"name":"data","driver":"local","mountpoint":"/data","created_at":"now","labels":{},"scope":"local","used_by":[{"container_id":"c1","container_name":"api","mount_path":"/srv/data","rw":true}],"raw":{"Name":"data"}}`)
 	response = performRequest(router, http.MethodGet, "/api/v1/networks")

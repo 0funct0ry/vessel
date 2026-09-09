@@ -83,8 +83,24 @@ type imageDetailView struct {
 	Cmd          []string          `json:"cmd"`
 	Labels       map[string]string `json:"labels"`
 	UsedByCount  int               `json:"used_by_count"`
+	UsedBy       []imageUseView    `json:"used_by"`
 	Dangling     bool              `json:"dangling"`
 	Raw          json.RawMessage   `json:"raw"`
+}
+
+type imageUseView struct {
+	ContainerID   string `json:"container_id"`
+	ContainerName string `json:"container_name"`
+	State         string `json:"state"`
+}
+
+type historyLayerView struct {
+	ID        string   `json:"id"`
+	Created   int64    `json:"created"`
+	CreatedBy string   `json:"created_by"`
+	Size      int64    `json:"size"`
+	Comment   string   `json:"comment"`
+	Tags      []string `json:"tags"`
 }
 
 type volumeUseView struct {
@@ -136,11 +152,15 @@ type hostContainersView struct {
 }
 
 type hostDiskView struct {
-	Images      int64 `json:"images"`
-	Containers  int64 `json:"containers"`
-	Volumes     int64 `json:"volumes"`
-	BuildCache  int64 `json:"build_cache"`
-	Reclaimable int64 `json:"reclaimable"`
+	Images                int64 `json:"images"`
+	Containers            int64 `json:"containers"`
+	Volumes               int64 `json:"volumes"`
+	BuildCache            int64 `json:"build_cache"`
+	Reclaimable           int64 `json:"reclaimable"`
+	ImagesReclaimable     int64 `json:"images_reclaimable"`
+	ContainersReclaimable int64 `json:"containers_reclaimable"`
+	VolumesReclaimable    int64 `json:"volumes_reclaimable"`
+	BuildCacheReclaimable int64 `json:"build_cache_reclaimable"`
 }
 
 type hostMemoryView struct {
@@ -251,8 +271,45 @@ func imageDetailToView(v *dockerapi.ImageDetail, containers []dockerapi.Containe
 		ID: v.ID, RepoTags: nonNilSlice(v.RepoTags), RepoDigests: nonNilSlice(v.RepoDigests), Created: v.Created,
 		Size: v.Size, Architecture: v.Architecture, OS: v.Os, Env: nonNilSlice(v.Env),
 		Entrypoint: nonNilSlice(v.Entrypoint), Cmd: nonNilSlice(v.Cmd), Labels: nonNilMap(v.Labels),
-		UsedByCount: imageInUseCount(v.ID, v.RepoTags, containers), Dangling: isDangling(v.RepoTags), Raw: v.Raw,
+		UsedByCount: imageInUseCount(v.ID, v.RepoTags, containers), UsedBy: imageUses(v.ID, v.RepoTags, containers),
+		Dangling: isDangling(v.RepoTags), Raw: v.Raw,
 	}
+}
+
+func imageUses(imageID string, tags []string, containers []dockerapi.Container) []imageUseView {
+	uses := make([]imageUseView, 0)
+	for _, c := range containers {
+		used := imageID != "" && c.ImageID == imageID
+		if !used && c.ImageID == "" {
+			for _, tag := range tags {
+				if c.Image == tag {
+					used = true
+					break
+				}
+			}
+		}
+		if used {
+			uses = append(uses, imageUseView{c.ID, normalizedContainerName(c.Names), c.State})
+		}
+	}
+	sort.SliceStable(uses, func(i, j int) bool {
+		if uses[i].ContainerName == uses[j].ContainerName {
+			return uses[i].ContainerID < uses[j].ContainerID
+		}
+		return uses[i].ContainerName < uses[j].ContainerName
+	})
+	return uses
+}
+
+func historyToView(layers []dockerapi.HistoryLayer) []historyLayerView {
+	views := make([]historyLayerView, 0, len(layers))
+	for _, layer := range layers {
+		views = append(views, historyLayerView{
+			ID: layer.ID, Created: layer.Created, CreatedBy: layer.CreatedBy,
+			Size: layer.Size, Comment: layer.Comment, Tags: nonNilSlice(layer.Tags),
+		})
+	}
+	return views
 }
 
 func volumeUses(name string, containers []dockerapi.Container) []volumeUseView {

@@ -40,6 +40,7 @@ var protectedRoutes = []protectedRoute{
 	{http.MethodDelete, "/api/v1/containers/c1", "", store.RoleOperator},
 	{http.MethodGet, "/api/v1/images", "", store.RoleViewer},
 	{http.MethodGet, "/api/v1/images/i1", "", store.RoleViewer},
+	{http.MethodGet, "/api/v1/images/i1/history", "", store.RoleViewer},
 	{http.MethodPost, "/api/v1/images/pull", `{"reference":"repo:tag"}`, store.RoleOperator},
 	{http.MethodPost, "/api/v1/images/i1/tag", `{"repo":"repo","tag":"tag"}`, store.RoleOperator},
 	{http.MethodDelete, "/api/v1/images/i1", "", store.RoleOperator},
@@ -113,7 +114,7 @@ func TestMeIncludesCapabilities(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := roleRequest(router, protectedRoute{method: http.MethodGet, path: "/api/v1/auth/me"}, token)
-	assertJSON(t, response.Body.String(), `{"auth":true,"user":{"id":"1","username":"viewer","role":"viewer"},"capabilities":{"auth.logout":true,"auth.me":true,"auth.ws_ticket":true,"host.read":true,"containers.read":true,"containers.logs":true,"containers.stats":true,"containers.top":true,"containers.start":false,"containers.stop":false,"containers.restart":false,"containers.pause":false,"containers.unpause":false,"containers.kill":false,"containers.rename":false,"containers.remove":false,"containers.exec":false,"images.read":true,"images.pull":false,"images.tag":false,"images.remove":false,"volumes.read":true,"volumes.create":false,"volumes.remove":false,"networks.read":true,"networks.create":false,"networks.remove":false,"networks.connect":false,"networks.disconnect":false,"prune.run":false}}`)
+	assertJSON(t, response.Body.String(), `{"auth":true,"user":{"id":"1","username":"viewer","role":"viewer"},"capabilities":{"auth.logout":true,"auth.me":true,"auth.ws_ticket":true,"host.read":true,"containers.read":true,"containers.logs":true,"containers.stats":true,"containers.top":true,"containers.start":false,"containers.stop":false,"containers.restart":false,"containers.pause":false,"containers.unpause":false,"containers.kill":false,"containers.rename":false,"containers.remove":false,"containers.exec":false,"images.read":true,"images.history":true,"images.pull":false,"images.tag":false,"images.remove":false,"volumes.read":true,"volumes.create":false,"volumes.remove":false,"networks.read":true,"networks.create":false,"networks.remove":false,"networks.connect":false,"networks.disconnect":false,"prune.run":false}}`)
 
 	response = roleRequest(NewRouter(Config{Docker: newFakeDockerClient()}), protectedRoute{method: http.MethodGet, path: "/api/v1/auth/me"}, "")
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"auth":false`) || !strings.Contains(response.Body.String(), `"role":"admin"`) || !strings.Contains(response.Body.String(), `"images.remove":true`) {

@@ -128,4 +128,7 @@ func TestHostAggregatesAndDiskBytes(t *testing.T) {
 	if disk.Images != 17 || disk.Containers != 3 || disk.BuildCache != 4 || disk.Reclaimable != 17 {
 		t.Fatalf("disk=%+v", disk)
 	}
+	if disk.ImagesReclaimable != 10 || disk.ContainersReclaimable != 3 || disk.BuildCacheReclaimable != 4 {
+		t.Fatalf("per-kind reclaimable disk=%+v", disk)
+	}
 }

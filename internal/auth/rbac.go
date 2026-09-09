@@ -43,6 +43,7 @@ var Policies = []Policy{
 	{http.MethodGet, "/api/v1/containers/:id/exec", store.RoleOperator, "containers.exec", true},
 	{http.MethodGet, "/api/v1/images", store.RoleViewer, "images.read", true},
 	{http.MethodGet, "/api/v1/images/:id", store.RoleViewer, "images.read", true},
+	{http.MethodGet, "/api/v1/images/:id/history", store.RoleViewer, "images.history", true},
 	{http.MethodPost, "/api/v1/images/pull", store.RoleOperator, "images.pull", true},
 	{http.MethodPost, "/api/v1/images/:id/tag", store.RoleOperator, "images.tag", true},
 	{http.MethodDelete, "/api/v1/images/:id", store.RoleOperator, "images.remove", true},

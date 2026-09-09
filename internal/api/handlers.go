@@ -410,24 +410,28 @@ func diskToHostView(disk *dockerapi.DiskUsageInfo) hostDiskView {
 		view.Images += image.Size
 		if image.Containers == 0 {
 			view.Reclaimable += image.Size
+			view.ImagesReclaimable += image.Size
 		}
 	}
 	for _, container := range disk.Containers {
 		view.Containers += container.SizeRW
 		if container.State != "running" {
 			view.Reclaimable += container.SizeRW
+			view.ContainersReclaimable += container.SizeRW
 		}
 	}
 	for _, volume := range disk.Volumes {
 		view.Volumes += volume.UsageData.Size
 		if volume.UsageData.RefCount == 0 {
 			view.Reclaimable += volume.UsageData.Size
+			view.VolumesReclaimable += volume.UsageData.Size
 		}
 	}
 	for _, cache := range disk.BuildCache {
 		view.BuildCache += cache.Size
 		if cache.UsageCount == 0 {
 			view.Reclaimable += cache.Size
+			view.BuildCacheReclaimable += cache.Size
 		}
 	}
 	return view
@@ -507,6 +511,16 @@ func (s *server) handleImage(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, imageDetailToView(image, containers))
+}
+
+func (s *server) handleImageHistory(c *gin.Context) {
+	id := c.Param("id")
+	layers, err := s.docker.History(c.Request.Context(), id)
+	if err != nil {
+		Fail(c, forResource("image", id, err))
+		return
+	}
+	c.JSON(http.StatusOK, historyToView(layers))
 }
 
 func (s *server) handleVolumes(c *gin.Context) {
