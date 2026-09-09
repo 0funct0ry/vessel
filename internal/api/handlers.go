@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,6 +21,8 @@ import (
 )
 
 var loadedImageRE = regexp.MustCompile(`(?m)^Loaded image: ([^\s]+)\s*$`)
+var buildStepRE = regexp.MustCompile(`(?m)Step ([0-9]+)/([0-9]+)\s*:`)
+var buildContextLimit int64 = dockerapi.MaxBuildContextBytes
 
 var resourceNameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`)
 var imageReferenceRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:/-]*(?::[a-zA-Z0-9][a-zA-Z0-9_.-]*|@[A-Za-z0-9_+.-]+:[A-Fa-f0-9]+)?$`)
@@ -326,6 +329,240 @@ func (s *server) handleImageImport(c *gin.Context) {
 					loaded = append(loaded, match[1])
 				}
 				if err := send("import", gin.H{"stream": line.Stream}); err != nil {
+					return err
+				}
+			}
+		}
+	})
+}
+
+type stagedBuildFile struct {
+	name, path string
+	size       int64
+}
+
+func (s *server) handleImageBuild(c *gin.Context) {
+	mediaType, _, err := mime.ParseMediaType(c.GetHeader("Content-Type"))
+	if err != nil || mediaType != "multipart/form-data" {
+		Fail(c, invalidInput("Content-Type must be multipart/form-data"))
+		return
+	}
+	reader, err := c.Request.MultipartReader()
+	if err != nil {
+		Fail(c, invalidInput("invalid multipart upload"))
+		return
+	}
+	var dockerfile *stagedBuildFile
+	var files []stagedBuildFile
+	var contextPaths []string
+	var tags []string
+	var total int64
+	cleanup := func() {
+		for _, file := range files {
+			_ = os.Remove(file.path)
+		}
+		if dockerfile != nil {
+			_ = os.Remove(dockerfile.path)
+		}
+	}
+	defer cleanup()
+	stage := func(name string, source io.Reader) (stagedBuildFile, error) {
+		if total >= buildContextLimit {
+			return stagedBuildFile{}, dockerapi.ErrBuildContextTooLarge
+		}
+		f, err := os.CreateTemp("", "vessel-build-*")
+		if err != nil {
+			return stagedBuildFile{}, err
+		}
+		n, copyErr := io.Copy(f, io.LimitReader(source, buildContextLimit-total+1))
+		closeErr := f.Close()
+		if copyErr != nil || closeErr != nil {
+			_ = os.Remove(f.Name())
+			if copyErr != nil {
+				return stagedBuildFile{}, copyErr
+			}
+			return stagedBuildFile{}, closeErr
+		}
+		if n > buildContextLimit-total {
+			_ = os.Remove(f.Name())
+			return stagedBuildFile{}, dockerapi.ErrBuildContextTooLarge
+		}
+		total += n
+		return stagedBuildFile{name: name, path: f.Name(), size: n}, nil
+	}
+	for {
+		part, nextErr := reader.NextPart()
+		if errors.Is(nextErr, io.EOF) {
+			break
+		}
+		if nextErr != nil {
+			Fail(c, invalidInput("invalid multipart upload"))
+			return
+		}
+		formName, filename := part.FormName(), part.FileName()
+		switch formName {
+		case "tags[]":
+			value, readErr := io.ReadAll(io.LimitReader(part, 4097))
+			part.Close()
+			if readErr != nil || len(value) > 4096 {
+				Fail(c, invalidInput("invalid build tag"))
+				return
+			}
+			tags = append(tags, strings.TrimSpace(string(value)))
+		case "dockerfile":
+			if dockerfile != nil {
+				part.Close()
+				Fail(c, invalidInput("exactly one dockerfile is required"))
+				return
+			}
+			file, stageErr := stage("Dockerfile", part)
+			part.Close()
+			if stageErr != nil {
+				if errors.Is(stageErr, dockerapi.ErrBuildContextTooLarge) {
+					Fail(c, buildContextTooLarge())
+				} else {
+					Fail(c, stageErr)
+				}
+				return
+			}
+			dockerfile = &file
+		case "context_path[]":
+			value, readErr := io.ReadAll(io.LimitReader(part, 4097))
+			part.Close()
+			if readErr != nil || len(value) > 4096 {
+				Fail(c, invalidPath("invalid context path"))
+				return
+			}
+			contextPaths = append(contextPaths, strings.TrimSpace(string(value)))
+		case "context":
+			if filename == "" {
+				part.Close()
+				Fail(c, invalidPath("context files require a relative path"))
+				return
+			}
+			file, stageErr := stage(filename, part)
+			part.Close()
+			if stageErr != nil {
+				if errors.Is(stageErr, dockerapi.ErrBuildContextTooLarge) {
+					Fail(c, buildContextTooLarge())
+				} else {
+					Fail(c, stageErr)
+				}
+				return
+			}
+			files = append(files, file)
+		default:
+			part.Close()
+			Fail(c, invalidInput("unknown multipart field %q", formName))
+			return
+		}
+	}
+	if len(contextPaths) > 0 && len(contextPaths) != len(files) {
+		Fail(c, invalidPath("each context file requires one relative path"))
+		return
+	}
+	for i := range files {
+		if len(contextPaths) > 0 {
+			files[i].name = contextPaths[i]
+		}
+		if err := dockerapi.ValidateBuildContextPath(files[i].name); err != nil {
+			Fail(c, invalidPath("context path must not contain .."))
+			return
+		}
+	}
+	if dockerfile == nil || dockerfile.size == 0 {
+		Fail(c, invalidInput("dockerfile is required"))
+		return
+	}
+	if len(tags) == 0 {
+		Fail(c, invalidImageReference("at least one tag is required"))
+		return
+	}
+	for _, tag := range tags {
+		if !imageReferenceRE.MatchString(tag) {
+			Fail(c, invalidImageReference("tag must be repo[:tag]"))
+			return
+		}
+	}
+	tarFile, err := os.CreateTemp("", "vessel-build-context-*.tar")
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	tarPath := tarFile.Name()
+	defer os.Remove(tarPath)
+	dockerSource, err := os.Open(dockerfile.path)
+	if err != nil {
+		tarFile.Close()
+		Fail(c, err)
+		return
+	}
+	defer dockerSource.Close()
+	context := make([]dockerapi.BuildContextFile, 0, len(files))
+	opened := make([]*os.File, 0, len(files))
+	defer func() {
+		for _, f := range opened {
+			_ = f.Close()
+		}
+	}()
+	for _, file := range files {
+		f, openErr := os.Open(file.path)
+		if openErr != nil {
+			tarFile.Close()
+			Fail(c, openErr)
+			return
+		}
+		opened = append(opened, f)
+		context = append(context, dockerapi.BuildContextFile{Path: file.name, Reader: f, Size: file.size})
+	}
+	if err := dockerapi.WriteBuildContext(tarFile, dockerapi.BuildContextFile{Reader: dockerSource, Size: dockerfile.size}, context, buildContextLimit); err != nil {
+		tarFile.Close()
+		if errors.Is(err, dockerapi.ErrInvalidBuildPath) {
+			Fail(c, invalidPath("context path must not contain .."))
+		} else if errors.Is(err, dockerapi.ErrBuildContextTooLarge) {
+			Fail(c, buildContextTooLarge())
+		} else {
+			Fail(c, err)
+		}
+		return
+	}
+	if err := tarFile.Close(); err != nil {
+		Fail(c, err)
+		return
+	}
+	Stream(c, func(send func(string, any) error) error {
+		archive, err := os.Open(tarPath)
+		if err != nil {
+			return err
+		}
+		defer archive.Close()
+		stream, err := s.docker.BuildImage(c.Request.Context(), archive, tags)
+		if err != nil {
+			return err
+		}
+		defer stream.Close()
+		imageID := ""
+		for {
+			line, readErr := stream.Next()
+			if errors.Is(readErr, io.EOF) {
+				return send("done", gin.H{"image_id": imageID})
+			}
+			if readErr != nil {
+				return readErr
+			}
+			if line.Error != "" {
+				return errors.New(line.Error)
+			}
+			if line.Aux.ID != "" {
+				imageID = line.Aux.ID
+			}
+			if line.Stream != "" {
+				payload := gin.H{"line": line.Stream}
+				if match := buildStepRE.FindStringSubmatch(line.Stream); len(match) == 3 {
+					payload["step"], _ = strconv.Atoi(match[1])
+					payload["total_steps"], _ = strconv.Atoi(match[2])
+				}
+				if err := send("build", payload); err != nil {
 					return err
 				}
 			}

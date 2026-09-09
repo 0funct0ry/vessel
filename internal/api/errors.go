@@ -40,6 +40,12 @@ func invalidName(format string, args ...any) error {
 func invalidImageReference(format string, args ...any) error {
 	return &validationError{code: "invalid_image_reference", message: fmt.Sprintf(format, args...)}
 }
+func invalidPath(format string, args ...any) error {
+	return &validationError{code: "invalid_path", message: fmt.Sprintf(format, args...)}
+}
+func buildContextTooLarge() error {
+	return &validationError{code: "build_context_too_large", message: "build context exceeds 200 MiB"}
+}
 
 func (e *queryError) Error() string { return e.message }
 

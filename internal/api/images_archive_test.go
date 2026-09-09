@@ -1,12 +1,14 @@
 package api
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -17,6 +19,21 @@ type archiveImportStream struct {
 	lines []dockerapi.ImportLine
 	at    int
 }
+
+type buildTestStream struct {
+	lines []dockerapi.BuildLine
+	at    int
+}
+
+func (s *buildTestStream) Next() (dockerapi.BuildLine, error) {
+	if s.at >= len(s.lines) {
+		return dockerapi.BuildLine{}, io.EOF
+	}
+	line := s.lines[s.at]
+	s.at++
+	return line, nil
+}
+func (*buildTestStream) Close() error { return nil }
 
 func (s *archiveImportStream) Next() (dockerapi.ImportLine, error) {
 	if s.at >= len(s.lines) {
@@ -101,6 +118,77 @@ func TestImageImportErrorSSE(t *testing.T) {
 	NewRouter(Config{Docker: fake}).ServeHTTP(w, req)
 	if got := w.Body.String(); !strings.Contains(got, "event: error") || !strings.Contains(got, "bad archive") {
 		t.Fatalf("SSE = %s", got)
+	}
+}
+
+func TestImageBuildMultipartSSE(t *testing.T) {
+	fake := newFakeDockerClient()
+	aux := dockerapi.BuildLine{}
+	aux.Aux.ID = "sha256:built"
+	fake.buildStream = &buildTestStream{lines: []dockerapi.BuildLine{{Stream: "Step 1/2 : FROM scratch\n"}, aux}}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	dockerfile, _ := writer.CreateFormField("dockerfile")
+	_, _ = dockerfile.Write([]byte("FROM scratch\n"))
+	_ = writer.WriteField("context_path[]", "app/main.go")
+	context, _ := writer.CreateFormFile("context", "main.go")
+	_, _ = context.Write([]byte("package main"))
+	_ = writer.WriteField("tags[]", "acme/api:1")
+	_ = writer.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/images/build", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	NewRouter(Config{Docker: fake}).ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"step":1,"total_steps":2`) || !strings.Contains(w.Body.String(), `"image_id":"sha256:built"`) {
+		t.Fatalf("response = %d %s", w.Code, w.Body.String())
+	}
+	if got, want := fake.buildTags, []string{"acme/api:1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("tags = %#v", got)
+	}
+	tr := tar.NewReader(bytes.NewReader(fake.buildBody))
+	for _, name := range []string{"Dockerfile", "app/main.go"} {
+		h, err := tr.Next()
+		if err != nil || h.Name != name {
+			t.Fatalf("tar entry = %#v, %v", h, err)
+		}
+	}
+}
+
+func TestImageBuildRejectsContextTraversal(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	dockerfile, _ := writer.CreateFormField("dockerfile")
+	_, _ = dockerfile.Write([]byte("FROM scratch"))
+	_ = writer.WriteField("context_path[]", "../secret")
+	context, _ := writer.CreateFormFile("context", "secret")
+	_, _ = context.Write([]byte("x"))
+	_ = writer.WriteField("tags[]", "acme/api:1")
+	_ = writer.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/images/build", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	NewRouter(Config{Docker: newFakeDockerClient()}).ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_path") {
+		t.Fatalf("response = %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestImageBuildRejectsOversizeContext(t *testing.T) {
+	old := buildContextLimit
+	buildContextLimit = 4
+	defer func() { buildContextLimit = old }()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	dockerfile, _ := writer.CreateFormField("dockerfile")
+	_, _ = dockerfile.Write([]byte("FROM scratch"))
+	_ = writer.WriteField("tags[]", "acme/api:1")
+	_ = writer.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/images/build", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	NewRouter(Config{Docker: newFakeDockerClient()}).ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "build_context_too_large") {
+		t.Fatalf("response = %d %s", w.Code, w.Body.String())
 	}
 }
 

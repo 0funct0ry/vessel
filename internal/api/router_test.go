@@ -31,6 +31,9 @@ type fakeDockerClient struct {
 	export         io.ReadCloser
 	importStream   dockerapi.ImportStream
 	importBody     []byte
+	buildStream    dockerapi.BuildStream
+	buildBody      []byte
+	buildTags      []string
 	volumes        []dockerapi.Volume
 	volume         *dockerapi.Volume
 	networks       []dockerapi.Network
@@ -124,6 +127,11 @@ func (f *fakeDockerClient) ExportImages(context.Context, []string) (io.ReadClose
 func (f *fakeDockerClient) ImportImages(_ context.Context, tar io.Reader) (dockerapi.ImportStream, error) {
 	f.importBody, _ = io.ReadAll(tar)
 	return f.importStream, f.err
+}
+func (f *fakeDockerClient) BuildImage(_ context.Context, tar io.Reader, tags []string) (dockerapi.BuildStream, error) {
+	f.buildBody, _ = io.ReadAll(tar)
+	f.buildTags = append([]string(nil), tags...)
+	return f.buildStream, f.err
 }
 
 func (f *fakeDockerClient) ListVolumes(context.Context) ([]dockerapi.Volume, error) {

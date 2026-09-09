@@ -116,6 +116,75 @@ function ImportModal({ close, done }: { close: () => void; done: () => void }) {
   </div>;
 }
 
+type ContextFile = File & { webkitRelativePath?: string };
+
+function BuildModal({ close, done }: { close: () => void; done: () => void }) {
+  const { push } = useToast();
+  const [tag, setTag] = useState("");
+  const [dockerfile, setDockerfile] = useState("FROM alpine:3.20\n");
+  const [files, setFiles] = useState<File[]>([]);
+  const [lines, setLines] = useState<string[]>([]);
+  const [step, setStep] = useState<{ current: number; total: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const dockerfileInput = useRef<HTMLInputElement>(null);
+  const contextInput = useRef<HTMLInputElement>(null);
+  const controller = useRef<AbortController | null>(null);
+  const readDockerfile = async (file: File | null) => {
+    if (!file || busy) return;
+    try { setDockerfile(await file.text()); setResult(null); } catch { setResult({ ok: false, message: "Could not read Dockerfile." }); }
+  };
+  const addFiles = (newFiles: FileList | null) => {
+    if (!newFiles || busy) return;
+    setFiles((current) => [...current, ...Array.from(newFiles)]);
+    setResult(null);
+  };
+  async function build() {
+    if (!tag.trim() || !dockerfile.trim()) return;
+    setBusy(true); setResult(null); setLines([]); setStep(null);
+    const form = new FormData();
+    form.append("dockerfile", new Blob([dockerfile], { type: "text/plain" }), "Dockerfile");
+    form.append("tags[]", tag.trim());
+    files.forEach((file) => {
+      const path = (file as ContextFile).webkitRelativePath || file.name;
+      form.append("context_path[]", path);
+      form.append("context", file, path);
+    });
+    const ac = new AbortController(); controller.current = ac;
+    try {
+      await streamSSE("/images/build", form, {}, (name, data) => {
+        if (name === "build") {
+          const event = data as { line?: string; step?: number; total_steps?: number };
+          if (event.line) { const line = event.line; setLines((current) => [...current, line.trimEnd()]); }
+          if (event.step && event.total_steps) setStep({ current: event.step, total: event.total_steps });
+        }
+        if (name === "done") { setResult({ ok: true, message: `Built ${(data as { image_id?: string }).image_id || tag.trim()}.` }); done(); }
+        if (name === "error") throw new Error(String((data as { message?: string }).message ?? "build failed"));
+      }, ac.signal);
+    } catch (e) {
+      const message = ac.signal.aborted ? "Build cancelled." : e instanceof Error ? e.message : "build failed";
+      setResult({ ok: false, message });
+      if (!ac.signal.aborted) push(`Could not build image: ${message}`, "error");
+    } finally { setBusy(false); controller.current = null; }
+  }
+  return <div role="dialog" aria-modal="true" aria-labelledby="build-title" className="fixed inset-0 z-40 grid place-items-center bg-ink/45 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) close(); }}>
+    <div className="w-full max-w-2xl rounded border border-line bg-panel p-5 shadow-lg">
+      <div className="flex items-center gap-3"><h2 id="build-title" className="m-0 text-lg">Build image</h2><button aria-label="Close build dialog" disabled={busy} onClick={close} className="ml-auto rounded px-2 text-xl text-muted hover:bg-paper hover:text-text">×</button></div>
+      <div className="mt-4 flex flex-wrap items-end gap-2">
+        <label className="min-w-[280px] flex-1 text-[13px]">Tag<input autoFocus disabled={busy} value={tag} onChange={(e) => setTag(e.target.value)} placeholder="ghcr.io/acme/api:1.4.4" className="mt-1 block w-full rounded border border-line bg-panel px-2 py-1.5 font-mono" /></label>
+        <input ref={dockerfileInput} className="sr-only" type="file" accept=".dockerfile,Dockerfile,text/plain" onChange={(e) => void readDockerfile(e.target.files?.[0] ?? null)} />
+        <input ref={contextInput} className="sr-only" type="file" multiple onChange={(e) => addFiles(e.target.files)} />
+        <Button disabled={busy} onClick={() => dockerfileInput.current?.click()}>Upload Dockerfile</Button><Button disabled={busy} onClick={() => contextInput.current?.click()}>Add files</Button>
+      </div>
+      <textarea aria-label="Dockerfile" spellCheck={false} disabled={busy} value={dockerfile} onChange={(e) => setDockerfile(e.target.value)} className="mt-3 block h-48 w-full resize-y rounded border border-line bg-panel p-2.5 font-mono text-[12.5px]" />
+      <div className="mt-2 flex flex-wrap gap-1.5 text-[12px]">{files.length === 0 ? <span className="text-muted">Dockerfile only</span> : files.map((file, index) => <span key={`${file.name}-${index}`} className="rounded border border-line bg-paper px-1.5 py-0.5 font-mono">{(file as ContextFile).webkitRelativePath || file.name}<button disabled={busy} aria-label={`Remove ${file.name}`} onClick={() => setFiles((current) => current.filter((_, i) => i !== index))} className="ml-1.5 text-muted hover:text-fail">×</button></span>)}</div>
+      {(lines.length > 0 || step) && <div className="mt-3 rounded border border-line bg-paper p-2"><div className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[12px]">{lines.map((line, index) => <div key={`${index}-${line}`}>{line}</div>)}</div>{step && <div className="mt-2 h-1.5 overflow-hidden rounded bg-panel"><div className="h-full bg-hull" style={{ width: `${Math.round(step.current / step.total * 100)}%` }} /></div>}</div>}
+      {result && <p role="status" className={`mt-3 text-[13px] ${result.ok ? "text-run" : "text-fail"}`}>{result.ok ? "✓ " : ""}{result.message}</p>}
+      <div className="mt-5 flex justify-end gap-2"><Button onClick={close} disabled={busy}>Close</Button>{busy ? <Button variant="danger" onClick={() => controller.current?.abort()}>Cancel</Button> : <Button variant="primary" disabled={!tag.trim() || !dockerfile.trim() || result?.ok} onClick={() => void build()}>Build</Button>}</div>
+    </div>
+  </div>;
+}
+
 function PullDialog({ close, done }: { close: () => void; done: () => void }) {
   const { push } = useToast();
   const [reference, setReference] = useState("");
@@ -315,6 +384,7 @@ export function ImagesPage() {
   const [runImage, setRunImage] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [importOpen, setImportOpen] = useState(false);
+  const [buildOpen, setBuildOpen] = useState(false);
 
   const path = imagesQuery({ q, sort });
   const images = useQuery({ queryKey: ["images", q, sort], queryFn: () => api.get<Image[]>(path), refetchInterval: 5000 });
@@ -367,9 +437,11 @@ export function ImagesPage() {
       <Can do="prune.run"><Button onClick={() => setPrune(true)}>Prune unused</Button></Can>
       <Can do="images.export"><Button onClick={() => void exportImages().catch((e: unknown) => { const message = e instanceof Error ? e.message : "export failed"; push(`Could not export images: ${message}`, "error"); })}>Export selected</Button></Can>
       <Can do="images.import"><Button onClick={() => setImportOpen(true)}>Import</Button></Can>
+      <Can do="images.build"><Button onClick={() => setBuildOpen(true)}>Build image</Button></Can>
       <Can do="images.pull"><Button variant="primary" onClick={() => setPull(true)}>Pull image</Button></Can>
     </div>
     {importOpen && <ImportModal close={() => setImportOpen(false)} done={refresh} />}
+    {buildOpen && <BuildModal close={() => setBuildOpen(false)} done={refresh} />}
     {selected.size > 0 && <div className="mb-2 flex items-center gap-2.5 rounded bg-hull px-3 py-2 text-[13px] text-white"><span>{selected.size} selected</span><span className="flex-1" /><Button className="border-white/35 bg-transparent text-white hover:bg-white/10" onClick={() => setSelected(new Set())}>Clear</Button></div>}
     <div className="overflow-x-auto rounded border border-line bg-panel">
       {images.isLoading ? <EmptyState title="Loading images" action="Contacting Docker…" /> : rows.length === 0 ? <EmptyState title="No images found" action="Pull an image, or broaden the current filter." /> : <table className="w-full min-w-[860px] border-collapse text-[13px]">

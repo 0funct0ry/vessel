@@ -1,14 +1,61 @@
 package dockerapi
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 )
+
+func TestBuildImageAndContext(t *testing.T) {
+	var contextTar bytes.Buffer
+	if err := WriteBuildContext(&contextTar, BuildContextFile{Reader: strings.NewReader("FROM scratch\n"), Size: 13}, []BuildContextFile{{Path: "app/main.go", Reader: strings.NewReader("package main"), Size: 12}}, 1024); err != nil {
+		t.Fatal(err)
+	}
+	tr := tar.NewReader(bytes.NewReader(contextTar.Bytes()))
+	for _, want := range []string{"Dockerfile", "app/main.go"} {
+		h, err := tr.Next()
+		if err != nil || h.Name != want {
+			t.Fatalf("entry = %#v, %v; want %q", h, err, want)
+		}
+	}
+	if err := ValidateBuildContextPath("../secret"); !errors.Is(err, ErrInvalidBuildPath) {
+		t.Fatalf("path error = %v", err)
+	}
+	if err := WriteBuildContext(io.Discard, BuildContextFile{Reader: strings.NewReader("1234"), Size: 4}, nil, 3); !errors.Is(err, ErrBuildContextTooLarge) {
+		t.Fatalf("size error = %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1.43/build" || r.URL.Query().Get("dockerfile") != "Dockerfile" || !reflect.DeepEqual(r.URL.Query()["t"], []string{"acme/api:1", "acme/api:latest"}) || r.Header.Get("Content-Type") != "application/x-tar" {
+			t.Fatalf("request = %s %q", r.URL.String(), r.Header.Get("Content-Type"))
+		}
+		_, _ = io.WriteString(w, "{\"stream\":\"Step 1/1 : FROM scratch\\n\"}\n{\"aux\":{\"ID\":\"sha256:built\"}}\n")
+	}))
+	defer srv.Close()
+	c, err := New("tcp://" + srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := c.BuildImage(context.Background(), bytes.NewReader(contextTar.Bytes()), []string{"acme/api:1", "acme/api:latest"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	first, err := stream.Next()
+	if err != nil || first.Stream == "" {
+		t.Fatalf("first = %#v, %v", first, err)
+	}
+	second, err := stream.Next()
+	if err != nil || second.Aux.ID != "sha256:built" {
+		t.Fatalf("second = %#v, %v", second, err)
+	}
+}
 
 func TestExportAndImportImages(t *testing.T) {
 	archive := []byte("tar fixture")

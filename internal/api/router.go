@@ -93,6 +93,7 @@ func NewRouter(cfg Config) *gin.Engine {
 	v1.GET("/images/:id/history", s.handleImageHistory)
 	v1.GET("/images/export", s.handleImageExport)
 	v1.POST("/images/import", s.handleImageImport)
+	v1.POST("/images/build", s.handleImageBuild)
 	v1.POST("/images/pull", s.handleImagePull)
 	v1.POST("/images/:id/tag", s.handleImageTag)
 	v1.DELETE("/images/:id", s.handleImageRemove)

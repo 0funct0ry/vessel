@@ -25,6 +25,7 @@ type DockerClient interface {
 	History(context.Context, string) ([]dockerapi.HistoryLayer, error)
 	ExportImages(context.Context, []string) (io.ReadCloser, error)
 	ImportImages(context.Context, io.Reader) (dockerapi.ImportStream, error)
+	BuildImage(context.Context, io.Reader, []string) (dockerapi.BuildStream, error)
 	ListVolumes(context.Context) ([]dockerapi.Volume, error)
 	InspectVolume(context.Context, string) (*dockerapi.Volume, error)
 	ListNetworks(context.Context) ([]dockerapi.Network, error)
