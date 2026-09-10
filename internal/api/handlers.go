@@ -1002,7 +1002,7 @@ func (s *server) handleVolumeCreate(c *gin.Context) {
 		Fail(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, volumeToView(*volume, nil, true))
+	c.JSON(http.StatusCreated, volumeToView(*volume, nil, nil, true))
 }
 func (s *server) handleVolumeRemove(c *gin.Context) {
 	force, err := queryBool(c, "force")
@@ -1323,9 +1323,15 @@ func (s *server) handleVolumes(c *gin.Context) {
 		Fail(c, err)
 		return
 	}
+	// Disk usage is an optional Docker capability. A volume list remains useful
+	// when an older engine omits UsageData or /system/df cannot be read.
+	sizes := map[string]*int64{}
+	if disk, diskErr := s.docker.DiskUsage(c.Request.Context()); diskErr == nil {
+		sizes = volumeSizes(disk)
+	}
 	views := make([]volumeView, 0, len(volumes))
 	for _, volume := range volumes {
-		views = append(views, volumeToView(volume, containers, false))
+		views = append(views, volumeToView(volume, containers, sizes[volume.Name], false))
 	}
 	c.JSON(http.StatusOK, filterSortVolumes(views, query))
 }
@@ -1342,7 +1348,11 @@ func (s *server) handleVolume(c *gin.Context) {
 		Fail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, volumeToView(*volume, containers, true))
+	sizes := map[string]*int64{}
+	if disk, diskErr := s.docker.DiskUsage(c.Request.Context()); diskErr == nil {
+		sizes = volumeSizes(disk)
+	}
+	c.JSON(http.StatusOK, volumeToView(*volume, containers, sizes[volume.Name], true))
 }
 
 func (s *server) handleNetworks(c *gin.Context) {

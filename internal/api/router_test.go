@@ -352,6 +352,10 @@ func TestImageDockerfileNotFound(t *testing.T) {
 
 func TestVolumeListJoinExactJSON(t *testing.T) {
 	fake := newFakeDockerClient()
+	diskVolume := dockerapi.DiskVolume{Name: "data", UsageKnown: true}
+	diskVolume.UsageData.Size = 42
+	diskVolume.UsageData.RefCount = 1
+	fake.disk = &dockerapi.DiskUsageInfo{Volumes: []dockerapi.DiskVolume{diskVolume}}
 	fake.volumes = []dockerapi.Volume{{
 		Name: "data", Driver: "local", Mountpoint: "/var/lib/docker/volumes/data/_data",
 		CreatedAt: "2026-09-07T00:00:00Z", Labels: map[string]string{"tier": "db"}, Scope: "local",
@@ -367,7 +371,17 @@ func TestVolumeListJoinExactJSON(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", response.Code, response.Body.String())
 	}
-	assertJSON(t, response.Body.String(), `[{"name":"data","driver":"local","mountpoint":"/var/lib/docker/volumes/data/_data","created_at":"2026-09-07T00:00:00Z","labels":{"tier":"db"},"scope":"local","used_by":[{"container_id":"c1","container_name":"postgres","mount_path":"/var/lib/postgresql/data","rw":true}]}]`)
+	assertJSON(t, response.Body.String(), `[{"name":"data","driver":"local","mountpoint":"/var/lib/docker/volumes/data/_data","size_bytes":42,"created_at":"2026-09-07T00:00:00Z","labels":{"tier":"db"},"scope":"local","used_by":[{"container_id":"c1","container_name":"postgres","mount_path":"/var/lib/postgresql/data","rw":true}]}]`)
+}
+
+func TestVolumeSizeOmittedWhenUsageUnknown(t *testing.T) {
+	fake := newFakeDockerClient()
+	fake.volumes = []dockerapi.Volume{{Name: "data", Driver: "local"}}
+	fake.disk = &dockerapi.DiskUsageInfo{Volumes: []dockerapi.DiskVolume{{Name: "data"}}}
+	response := performRequest(NewRouter(Config{Docker: fake}), http.MethodGet, "/api/v1/volumes")
+	if response.Code != http.StatusOK || bytes.Contains(response.Body.Bytes(), []byte(`size_bytes`)) {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
 }
 
 func TestNetworkDetailAndContainerDetailJSON(t *testing.T) {

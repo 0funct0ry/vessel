@@ -46,8 +46,11 @@ export interface ImageUse { container_id: string; container_name: string; state:
 export interface ImageDetail { id: string; repo_tags: string[]; repo_digests: string[]; created: string; size: number; architecture: string; os: string; env: string[]; entrypoint: string[]; cmd: string[]; labels: Record<string, string>; used_by_count: number; used_by: ImageUse[]; dangling: boolean; raw: unknown }
 export interface HistoryLayer { id: string; created: number; created_by: string; size: number; comment: string; tags: string[] }
 export interface DockerfileReconstruction { dockerfile: string; approximate: true }
-export interface Volume { name: string; driver: string }
-export interface Network { id: string; name: string; driver: string }
+export interface VolumeUse { container_id: string; container_name: string; mount_path: string; rw: boolean }
+export interface Volume { name: string; driver: string; mountpoint: string; size_bytes?: number; created_at: string; labels: Record<string, string>; scope: string; used_by: VolumeUse[]; raw?: unknown }
+export interface NetworkIPAM { subnet?: string; gateway?: string }
+export interface NetworkConnection { container_id: string; container_name: string; ipv4_address: string; ipv6_address: string }
+export interface Network { id: string; name: string; driver: string; scope: string; ipam: NetworkIPAM[]; labels: Record<string, string>; containers: NetworkConnection[]; raw?: unknown }
 export interface CreateContainerResponse { id: string; name: string; warnings: string[]; start_error?: string }
 export interface CommitContainerResponse { image_id: string }
 export interface Top { titles: string[]; processes: string[][] }

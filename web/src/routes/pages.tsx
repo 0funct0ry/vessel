@@ -1,4 +1,5 @@
 import { EmptyState } from "../components/ui/EmptyState";
+export { NetworkDetailPage, NetworksPage, VolumeDetailPage, VolumesPage } from "./resources";
 export { ContainersPage } from "./containers";
 export { M156ContainerDetailPage as ContainerDetailPage } from "../components/containers/ContainerDetailM156";
 export { ImageDetailPage, ImagesPage } from "./images";
@@ -10,22 +11,6 @@ export { ImageDetailPage, ImagesPage } from "./images";
 
 export function DashboardPage() {
   return <EmptyState title="Dashboard is not built yet" action="This lands in M17." />;
-}
-
-export function VolumesPage() {
-  return <EmptyState title="No volumes to show yet" action="The volume list lands in M16." />;
-}
-
-export function VolumeDetailPage() {
-  return <EmptyState title="Volume detail is not built yet" action="Lands in M16." />;
-}
-
-export function NetworksPage() {
-  return <EmptyState title="No networks to show yet" action="The network list lands in M16." />;
-}
-
-export function NetworkDetailPage() {
-  return <EmptyState title="Network detail is not built yet" action="Lands in M16." />;
 }
 
 export function EventsPage() {

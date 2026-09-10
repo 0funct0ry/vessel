@@ -165,7 +165,9 @@ type DiskContainer struct {
 	State  string
 }
 type DiskVolume struct {
-	UsageData struct {
+	Name       string
+	UsageKnown bool
+	UsageData  struct {
 		Size     int64
 		RefCount int
 	}
@@ -185,7 +187,8 @@ type diskUsageResponse struct {
 		State  string `json:"State"`
 	} `json:"Containers"`
 	Volumes []struct {
-		UsageData struct {
+		Name      string `json:"Name"`
+		UsageData *struct {
 			Size     int64 `json:"Size"`
 			RefCount int   `json:"RefCount"`
 		} `json:"UsageData"`
@@ -222,8 +225,10 @@ func (c *Client) DiskUsage(ctx context.Context) (*DiskUsageInfo, error) {
 		info.Containers = append(info.Containers, DiskContainer{SizeRW: container.SizeRW, State: container.State})
 	}
 	for _, volume := range v.Volumes {
-		var out DiskVolume
-		out.UsageData.Size, out.UsageData.RefCount = volume.UsageData.Size, volume.UsageData.RefCount
+		out := DiskVolume{Name: volume.Name, UsageKnown: volume.UsageData != nil}
+		if volume.UsageData != nil {
+			out.UsageData.Size, out.UsageData.RefCount = volume.UsageData.Size, volume.UsageData.RefCount
+		}
 		info.Volumes = append(info.Volumes, out)
 	}
 	for _, cache := range v.BuildCache {

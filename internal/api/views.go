@@ -114,6 +114,7 @@ type volumeView struct {
 	Name       string            `json:"name"`
 	Driver     string            `json:"driver"`
 	Mountpoint string            `json:"mountpoint"`
+	SizeBytes  *int64            `json:"size_bytes,omitempty"`
 	CreatedAt  string            `json:"created_at"`
 	Labels     map[string]string `json:"labels"`
 	Scope      string            `json:"scope"`
@@ -330,15 +331,30 @@ func volumeUses(name string, containers []dockerapi.Container) []volumeUseView {
 	return uses
 }
 
-func volumeToView(v dockerapi.Volume, containers []dockerapi.Container, includeRaw bool) volumeView {
+func volumeToView(v dockerapi.Volume, containers []dockerapi.Container, sizeBytes *int64, includeRaw bool) volumeView {
 	view := volumeView{
 		Name: v.Name, Driver: v.Driver, Mountpoint: v.Mountpoint, CreatedAt: v.CreatedAt,
-		Labels: nonNilMap(v.Labels), Scope: v.Scope, UsedBy: volumeUses(v.Name, containers),
+		SizeBytes: sizeBytes, Labels: nonNilMap(v.Labels), Scope: v.Scope, UsedBy: volumeUses(v.Name, containers),
 	}
 	if includeRaw {
 		view.Raw = v.Raw
 	}
 	return view
+}
+
+func volumeSizes(disk *dockerapi.DiskUsageInfo) map[string]*int64 {
+	sizes := make(map[string]*int64)
+	if disk == nil {
+		return sizes
+	}
+	for _, volume := range disk.Volumes {
+		if volume.Name == "" || !volume.UsageKnown {
+			continue
+		}
+		size := volume.UsageData.Size
+		sizes[volume.Name] = &size
+	}
+	return sizes
 }
 
 func networkToView(v dockerapi.Network, includeRaw bool) networkView {
