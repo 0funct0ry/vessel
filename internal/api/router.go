@@ -85,8 +85,9 @@ func NewRouter(cfg Config) *gin.Engine {
 	v1.GET("/containers/:id/logs", s.handleContainerLogs)
 	v1.GET("/containers/:id/stats", s.handleContainerStats)
 	v1.GET("/containers/:id/top", s.handleContainerTop)
-	v1.POST("/containers/:id/:action", s.handleContainerLifecycle)
 	v1.POST("/containers", s.handleContainerCreate)
+	v1.POST("/containers/:id/commit", s.handleContainerCommit)
+	v1.POST("/containers/:id/:action", s.handleContainerLifecycle)
 	if s.execOn {
 		v1.GET("/containers/:id/files", s.handleContainerFiles)
 		v1.POST("/containers/:id/folders", s.handleContainerFolder)

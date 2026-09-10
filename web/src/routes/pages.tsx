@@ -1,5 +1,6 @@
 import { EmptyState } from "../components/ui/EmptyState";
-export { ContainerDetailPage, ContainersPage } from "./containers";
+export { ContainersPage } from "./containers";
+export { M156ContainerDetailPage as ContainerDetailPage } from "../components/containers/ContainerDetailM156";
 export { ImageDetailPage, ImagesPage } from "./images";
 
 // Placeholder pages for every SPEC §9.1 route. Real content lands in

@@ -551,6 +551,42 @@ func (s *server) handleContainerCreate(c *gin.Context) {
 	c.JSON(http.StatusCreated, response)
 }
 
+func (s *server) handleContainerCommit(c *gin.Context) {
+	var body struct {
+		Repo    string `json:"repo"`
+		Tag     string `json:"tag"`
+		Comment string `json:"comment"`
+		Pause   *bool  `json:"pause"`
+	}
+	if err := decodeBody(c, &body); err != nil {
+		Fail(c, err)
+		return
+	}
+	if err := required(body.Repo, "repo"); err != nil {
+		Fail(c, err)
+		return
+	}
+	reference := body.Repo
+	if body.Tag != "" {
+		reference += ":" + body.Tag
+	}
+	if !imageReferenceRE.MatchString(reference) {
+		Fail(c, invalidImageReference("image must be repo[:tag|@digest]"))
+		return
+	}
+	pause := true
+	if body.Pause != nil {
+		pause = *body.Pause
+	}
+	id := c.Param("id")
+	result, err := s.docker.CommitContainer(c.Request.Context(), id, dockerapi.CommitOptions{Repo: body.Repo, Tag: body.Tag, Comment: body.Comment, Pause: pause})
+	if err != nil {
+		Fail(c, forResource("container", id, err))
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"image_id": result.ImageID})
+}
+
 func (s *server) handleImagePull(c *gin.Context) {
 	var body struct {
 		Reference string `json:"reference"`

@@ -34,6 +34,7 @@ type DockerClient interface {
 	RenameContainer(context.Context, string, string) error
 	RemoveContainer(context.Context, string, dockerapi.RemoveContainerOptions) error
 	CreateContainer(context.Context, dockerapi.Spec) (dockerapi.CreateResult, error)
+	CommitContainer(context.Context, string, dockerapi.CommitOptions) (dockerapi.CommitResult, error)
 	PullImage(context.Context, string) (dockerapi.PullStream, error)
 	TagImage(context.Context, string, string, string) error
 	RemoveImage(context.Context, string, dockerapi.RemoveImageOptions) error

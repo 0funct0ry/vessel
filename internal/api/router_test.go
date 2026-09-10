@@ -57,6 +57,8 @@ type fakeDockerClient struct {
 	createSpec     dockerapi.Spec
 	createResult   dockerapi.CreateResult
 	createErr      error
+	commitOptions  dockerapi.CommitOptions
+	commitResult   dockerapi.CommitResult
 	removeCalls    []string
 	renameCalls    [][2]string
 	readFileName   string
@@ -174,6 +176,13 @@ func (f *fakeDockerClient) CreateContainer(_ context.Context, spec dockerapi.Spe
 		return f.createResult, f.createErr
 	}
 	return f.createResult, f.err
+}
+func (f *fakeDockerClient) CommitContainer(_ context.Context, _ string, opts dockerapi.CommitOptions) (dockerapi.CommitResult, error) {
+	f.commitOptions = opts
+	if f.commitResult.ImageID == "" {
+		f.commitResult.ImageID = "new-image"
+	}
+	return f.commitResult, f.err
 }
 func (f *fakeDockerClient) PullImage(context.Context, string) (dockerapi.PullStream, error) {
 	return f.pull, f.err

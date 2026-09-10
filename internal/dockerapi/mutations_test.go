@@ -21,6 +21,8 @@ func TestMutations_EngineRequests(t *testing.T) {
 			_, _ = io.WriteString(w, `{"Id":"net1"}`)
 		case "/v1.43/images/create":
 			_, _ = io.WriteString(w, `{"id":"layer","status":"Downloading","progressDetail":{"current":1,"total":2}}`+"\n")
+		case "/v1.43/commit":
+			_, _ = io.WriteString(w, `{"Id":"sha256:committed"}`)
 		case "/v1.43/volumes/prune":
 			_, _ = io.WriteString(w, `{"VolumesDeleted":["data"],"SpaceReclaimed":12}`)
 		}
@@ -50,6 +52,13 @@ func TestMutations_EngineRequests(t *testing.T) {
 	_ = pull.Close()
 	if err := c.TagImage(ctx, "img", "acme/app", "v1"); err != nil {
 		t.Fatal(err)
+	}
+	committed, err := c.CommitContainer(ctx, "a/b", CommitOptions{Repo: "acme/app", Tag: "snapshot", Comment: "before upgrade", Pause: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.ImageID != "sha256:committed" {
+		t.Fatalf("commit result=%+v", committed)
 	}
 	if err := c.RemoveImage(ctx, "img", RemoveImageOptions{Force: true, NoPrune: true}); err != nil {
 		t.Fatal(err)
@@ -81,7 +90,7 @@ func TestMutations_EngineRequests(t *testing.T) {
 	}
 	want := []string{
 		"POST /v1.43/containers/a%2Fb/stop?t=10", "POST /v1.43/containers/a/rename?name=renamed", "DELETE /v1.43/containers/a?force=1&v=1",
-		"POST /v1.43/images/create?fromImage=alpine%3A3.20", "POST /v1.43/images/img/tag?repo=acme%2Fapp&tag=v1", "DELETE /v1.43/images/img?force=1&noprune=1",
+		"POST /v1.43/images/create?fromImage=alpine%3A3.20", "POST /v1.43/images/img/tag?repo=acme%2Fapp&tag=v1", "POST /v1.43/commit?comment=before+upgrade&container=a%2Fb&pause=false&repo=acme%2Fapp&tag=snapshot", "DELETE /v1.43/images/img?force=1&noprune=1",
 		"POST /v1.43/volumes/create", "DELETE /v1.43/volumes/data?force=1", "POST /v1.43/networks/create", "DELETE /v1.43/networks/net1", "POST /v1.43/networks/net1/connect", "POST /v1.43/networks/net1/disconnect", "POST /v1.43/volumes/prune",
 	}
 	if strings.Join(seen, "\n") != strings.Join(want, "\n") {

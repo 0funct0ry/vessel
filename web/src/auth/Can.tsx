@@ -17,6 +17,7 @@ const REQUIRED_ROLE: Record<string, "operator" | "admin"> = {
   "containers.rename": "operator",
 	"containers.remove": "operator",
 	"containers.create": "operator",
+	"containers.commit": "operator",
   "containers.exec": "operator",
   "containers.files.list": "operator",
   "containers.files.upload": "operator",

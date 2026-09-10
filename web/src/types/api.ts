@@ -49,6 +49,8 @@ export interface DockerfileReconstruction { dockerfile: string; approximate: tru
 export interface Volume { name: string; driver: string }
 export interface Network { id: string; name: string; driver: string }
 export interface CreateContainerResponse { id: string; name: string; warnings: string[]; start_error?: string }
+export interface CommitContainerResponse { image_id: string }
+export interface Top { titles: string[]; processes: string[][] }
 export interface PullEvent { id: string; status: string; current?: number; total?: number; error?: string }
 export interface Stats { ts: string; cpu_pct: number | null; mem: { used: number; limit: number }; net: { rx: number; tx: number }; blk: { read: number; write: number } }
 export interface LogLine { ts?: string; stream: "stdout" | "stderr" | "vessel"; line: string }

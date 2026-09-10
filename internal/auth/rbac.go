@@ -41,6 +41,7 @@ var Policies = []Policy{
 	{http.MethodPost, "/api/v1/containers/:id/rename", store.RoleOperator, "containers.rename", true},
 	{http.MethodDelete, "/api/v1/containers/:id", store.RoleOperator, "containers.remove", true},
 	{http.MethodPost, "/api/v1/containers", store.RoleOperator, "containers.create", true},
+	{http.MethodPost, "/api/v1/containers/:id/commit", store.RoleOperator, "containers.commit", true},
 	{http.MethodGet, "/api/v1/containers/:id/files", store.RoleOperator, "containers.files.list", true},
 	{http.MethodPost, "/api/v1/containers/:id/files", store.RoleOperator, "containers.files.upload", true},
 	{http.MethodPost, "/api/v1/containers/:id/folders", store.RoleOperator, "containers.files.mkdir", true},

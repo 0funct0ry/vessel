@@ -39,6 +39,7 @@ var protectedRoutes = []protectedRoute{
 	{http.MethodPost, "/api/v1/containers/c1/rename", `{"name":"new"}`, store.RoleOperator},
 	{http.MethodDelete, "/api/v1/containers/c1", "", store.RoleOperator},
 	{http.MethodPost, "/api/v1/containers", `{"image":"repo:tag"}`, store.RoleOperator},
+	{http.MethodPost, "/api/v1/containers/c1/commit", `{"repo":"repo","tag":"tag"}`, store.RoleOperator},
 	{http.MethodGet, "/api/v1/containers/c1/files", "", store.RoleOperator},
 	{http.MethodPost, "/api/v1/containers/c1/files", "", store.RoleOperator},
 	{http.MethodPost, "/api/v1/containers/c1/folders", `{"path":"/tmp/x"}`, store.RoleOperator},
