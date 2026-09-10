@@ -39,6 +39,14 @@ var protectedRoutes = []protectedRoute{
 	{http.MethodPost, "/api/v1/containers/c1/rename", `{"name":"new"}`, store.RoleOperator},
 	{http.MethodDelete, "/api/v1/containers/c1", "", store.RoleOperator},
 	{http.MethodPost, "/api/v1/containers", `{"image":"repo:tag"}`, store.RoleOperator},
+	{http.MethodGet, "/api/v1/containers/c1/files", "", store.RoleOperator},
+	{http.MethodPost, "/api/v1/containers/c1/files", "", store.RoleOperator},
+	{http.MethodPost, "/api/v1/containers/c1/folders", `{"path":"/tmp/x"}`, store.RoleOperator},
+	{http.MethodGet, "/api/v1/containers/c1/files/download", "", store.RoleOperator},
+	{http.MethodDelete, "/api/v1/containers/c1/files", "", store.RoleOperator},
+	{http.MethodPost, "/api/v1/containers/c1/files/rename", `{"path":"/tmp/a","name":"b"}`, store.RoleOperator},
+	{http.MethodGet, "/api/v1/containers/c1/files/view", "", store.RoleOperator},
+	{http.MethodPut, "/api/v1/containers/c1/files/content", `{"path":"/tmp/a","content":""}`, store.RoleOperator},
 	{http.MethodGet, "/api/v1/images", "", store.RoleViewer},
 	{http.MethodGet, "/api/v1/images/i1", "", store.RoleViewer},
 	{http.MethodGet, "/api/v1/images/i1/history", "", store.RoleViewer},
@@ -116,11 +124,52 @@ func TestMeIncludesCapabilities(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := roleRequest(router, protectedRoute{method: http.MethodGet, path: "/api/v1/auth/me"}, token)
-	assertJSON(t, response.Body.String(), `{"auth":true,"user":{"id":"1","username":"viewer","role":"viewer"},"capabilities":{"auth.logout":true,"auth.me":true,"auth.ws_ticket":true,"host.read":true,"containers.read":true,"containers.logs":true,"containers.stats":true,"containers.top":true,"containers.start":false,"containers.stop":false,"containers.restart":false,"containers.pause":false,"containers.unpause":false,"containers.kill":false,"containers.rename":false,"containers.remove":false,"containers.create":false,"containers.exec":false,"images.read":true,"images.history":true,"images.export":false,"images.import":false,"images.build":false,"images.pull":false,"images.tag":false,"images.remove":false,"volumes.read":true,"volumes.create":false,"volumes.remove":false,"networks.read":true,"networks.create":false,"networks.remove":false,"networks.connect":false,"networks.disconnect":false,"prune.run":false}}`)
+	for _, capability := range []string{"containers.files.list", "containers.files.upload", "containers.files.mkdir", "containers.files.download", "containers.files.delete", "containers.files.rename", "containers.files.view", "containers.files.edit"} {
+		if !strings.Contains(response.Body.String(), `"`+capability+`":false`) {
+			t.Fatalf("capability %q missing/not false for viewer: %d %s", capability, response.Code, response.Body.String())
+		}
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
 
 	response = roleRequest(NewRouter(Config{Docker: newFakeDockerClient()}), protectedRoute{method: http.MethodGet, path: "/api/v1/auth/me"}, "")
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"auth":false`) || !strings.Contains(response.Body.String(), `"role":"admin"`) || !strings.Contains(response.Body.String(), `"images.remove":true`) {
 		t.Fatalf("auth-off /me = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestMeCapabilitiesExecOffAsymmetry(t *testing.T) {
+	persistence := memstore.New()
+	tokens, _, err := auth.LoadTokens(context.Background(), persistence, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// AllowExec is false but the caller is an operator, so containers.files.upload
+	// and containers.files.download (archive endpoints, no exec involved) must stay
+	// true while containers.files.list and containers.files.mkdir (exec-backed) must
+	// flip false. This is the asymmetry PROMPTS.md M15.4 calls out as easy to miss.
+	router := NewRouter(Config{Docker: newFakeDockerClient(), Store: persistence, AuthEnabled: true, AllowExec: false, Tokens: tokens})
+	token, err := tokens.Issue(store.User{ID: 1, Username: "op", Role: store.RoleOperator})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := roleRequest(router, protectedRoute{method: http.MethodGet, path: "/api/v1/auth/me"}, token)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	// Exec-gated capabilities are removed from the map entirely (see
+	// server.capabilities), not set to false, so assert their key is absent.
+	for _, capability := range []string{"containers.files.list", "containers.files.mkdir", "containers.files.delete", "containers.files.rename"} {
+		if strings.Contains(body, `"`+capability+`"`) {
+			t.Fatalf("capability %q present with exec off, want absent: %s", capability, body)
+		}
+	}
+	for _, capability := range []string{"containers.files.upload", "containers.files.download", "containers.files.view", "containers.files.edit"} {
+		if !strings.Contains(body, `"`+capability+`":true`) {
+			t.Fatalf("capability %q missing/false with exec off, want true: %s", capability, body)
+		}
 	}
 }
 

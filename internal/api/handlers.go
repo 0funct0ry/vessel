@@ -1,7 +1,9 @@
 package api
 
 import (
+	"archive/tar"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,16 +11,23 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/0funct0ry/vessel/internal/dockerapi"
 )
+
+// maxFileViewBytes bounds the file-browser's view/edit round trip (both are a
+// preview and a lightweight editor per M15.4, not a full editor for large or
+// binary files) and matches decodeBody's JSON request-body limit.
+const maxFileViewBytes = 1 << 20
 
 var loadedImageRE = regexp.MustCompile(`(?m)^Loaded image: ([^\s]+)\s*$`)
 var buildStepRE = regexp.MustCompile(`(?m)Step ([0-9]+)/([0-9]+)\s*:`)
@@ -60,6 +69,336 @@ func queryBool(c *gin.Context, name string) (bool, error) {
 		return false, invalidInput("%s must be a boolean", name)
 	}
 	return value, nil
+}
+
+func safeContainerPath(value string) (string, error) {
+	if value == "" {
+		return "/", nil
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == ".." {
+			return "", invalidPath("path must not contain ..")
+		}
+	}
+	return value, nil
+}
+
+func (s *server) requireRunningContainer(c *gin.Context) error {
+	detail, err := s.docker.InspectContainer(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		return forResource("container", c.Param("id"), err)
+	}
+	if detail.State != "running" {
+		return containerNotRunningError{}
+	}
+	return nil
+}
+
+func (s *server) handleContainerFiles(c *gin.Context) {
+	if err := s.requireRunningContainer(c); err != nil {
+		Fail(c, err)
+		return
+	}
+	dir := c.Query("path")
+	if dir == "" {
+		dir = "/"
+	}
+	entries, err := s.docker.ListDirectory(c.Request.Context(), c.Param("id"), dir)
+	if err != nil {
+		Fail(c, forResource("container", c.Param("id"), err))
+		return
+	}
+	c.JSON(http.StatusOK, entries)
+}
+
+func (s *server) handleContainerUpload(c *gin.Context) {
+	if err := s.requireRunningContainer(c); err != nil {
+		Fail(c, err)
+		return
+	}
+	if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+		Fail(c, invalidInput("invalid multipart upload"))
+		return
+	}
+	dir, err := safeContainerPath(c.Request.FormValue("path"))
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	headers := c.Request.MultipartForm.File["files"]
+	if len(headers) == 0 {
+		Fail(c, invalidInput("at least one file is required"))
+		return
+	}
+	tmp, err := os.CreateTemp("", "vessel-files-*.tar")
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	tw := tar.NewWriter(tmp)
+	for _, header := range headers {
+		file, openErr := header.Open()
+		if openErr != nil {
+			tw.Close()
+			tmp.Close()
+			Fail(c, openErr)
+			return
+		}
+		name := path.Base(header.Filename)
+		if name == "." || name == "/" {
+			file.Close()
+			tw.Close()
+			tmp.Close()
+			Fail(c, invalidPath("upload file name is invalid"))
+			return
+		}
+		writeErr := tw.WriteHeader(&tar.Header{Name: name, Mode: 0644, Size: header.Size})
+		if writeErr == nil {
+			_, writeErr = io.Copy(tw, file)
+		}
+		file.Close()
+		if writeErr != nil {
+			tw.Close()
+			tmp.Close()
+			Fail(c, writeErr)
+			return
+		}
+	}
+	if err := tw.Close(); err != nil {
+		tmp.Close()
+		Fail(c, err)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		Fail(c, err)
+		return
+	}
+	archive, err := os.Open(tmpPath)
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	defer archive.Close()
+	if err := s.docker.UploadFiles(c.Request.Context(), c.Param("id"), dir, archive); err != nil {
+		Fail(c, forResource("container", c.Param("id"), err))
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (s *server) handleContainerFolder(c *gin.Context) {
+	if err := s.requireRunningContainer(c); err != nil {
+		Fail(c, err)
+		return
+	}
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := decodeBody(c, &body); err != nil {
+		Fail(c, err)
+		return
+	}
+	if strings.TrimSpace(body.Path) == "" {
+		Fail(c, invalidInput("path is required"))
+		return
+	}
+	dir, err := safeContainerPath(body.Path)
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	if err := s.docker.CreateDirectory(c.Request.Context(), c.Param("id"), dir); err != nil {
+		Fail(c, forResource("container", c.Param("id"), err))
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (s *server) handleContainerDownload(c *gin.Context) {
+	if err := s.requireRunningContainer(c); err != nil {
+		Fail(c, err)
+		return
+	}
+	filePath, err := safeContainerPath(c.Query("path"))
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	archive, err := s.docker.DownloadPath(c.Request.Context(), c.Param("id"), filePath)
+	if err != nil {
+		Fail(c, forResource("container", c.Param("id"), err))
+		return
+	}
+	defer archive.Close()
+	name := path.Base(strings.TrimSuffix(filePath, "/"))
+	if name == "." || name == "/" {
+		name = "container-files"
+	}
+	c.Header("Content-Type", "application/x-tar")
+	c.Header("Content-Disposition", `attachment; filename="`+name+`.tar"`)
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, archive)
+}
+
+func (s *server) handleContainerFileDelete(c *gin.Context) {
+	if err := s.requireRunningContainer(c); err != nil {
+		Fail(c, err)
+		return
+	}
+	target, err := safeContainerPath(c.Query("path"))
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	if target == "" || target == "/" {
+		Fail(c, invalidPath("path is required"))
+		return
+	}
+	if err := s.docker.RemovePath(c.Request.Context(), c.Param("id"), target); err != nil {
+		Fail(c, forResource("container", c.Param("id"), err))
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (s *server) handleContainerFileRename(c *gin.Context) {
+	if err := s.requireRunningContainer(c); err != nil {
+		Fail(c, err)
+		return
+	}
+	var body struct {
+		Path string `json:"path"`
+		Name string `json:"name"`
+	}
+	if err := decodeBody(c, &body); err != nil {
+		Fail(c, err)
+		return
+	}
+	if strings.TrimSpace(body.Path) == "" {
+		Fail(c, invalidInput("path is required"))
+		return
+	}
+	if strings.TrimSpace(body.Name) == "" || strings.ContainsRune(body.Name, '/') {
+		Fail(c, invalidInput("name must be a single path segment"))
+		return
+	}
+	from, err := safeContainerPath(body.Path)
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	if from == "" || from == "/" {
+		Fail(c, invalidPath("path is required"))
+		return
+	}
+	to := path.Join(path.Dir(from), body.Name)
+	if err := s.docker.RenamePath(c.Request.Context(), c.Param("id"), from, to); err != nil {
+		Fail(c, forResource("container", c.Param("id"), err))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"path": to})
+}
+
+func (s *server) handleContainerFileView(c *gin.Context) {
+	if err := s.requireRunningContainer(c); err != nil {
+		Fail(c, err)
+		return
+	}
+	target, err := safeContainerPath(c.Query("path"))
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	if target == "" || target == "/" {
+		Fail(c, invalidPath("path is required"))
+		return
+	}
+	name, data, err := s.docker.ReadFile(c.Request.Context(), c.Param("id"), target)
+	if err != nil {
+		Fail(c, forResource("container", c.Param("id"), err))
+		return
+	}
+	if len(data) > maxFileViewBytes {
+		Fail(c, invalidInput("file exceeds %d bytes and cannot be previewed", maxFileViewBytes))
+		return
+	}
+	kind, mimeType := classifyFileContent(data)
+	response := gin.H{"name": name, "size": len(data), "mime": mimeType, "kind": kind}
+	switch kind {
+	case "text":
+		response["content"] = string(data)
+	case "image":
+		response["content"] = base64.StdEncoding.EncodeToString(data)
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+func (s *server) handleContainerFileWrite(c *gin.Context) {
+	if err := s.requireRunningContainer(c); err != nil {
+		Fail(c, err)
+		return
+	}
+	var body struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := decodeBody(c, &body); err != nil {
+		Fail(c, err)
+		return
+	}
+	if strings.TrimSpace(body.Path) == "" {
+		Fail(c, invalidInput("path is required"))
+		return
+	}
+	target, err := safeContainerPath(body.Path)
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	if target == "" || target == "/" {
+		Fail(c, invalidPath("path is required"))
+		return
+	}
+	if err := s.docker.WriteFile(c.Request.Context(), c.Param("id"), target, []byte(body.Content)); err != nil {
+		Fail(c, forResource("container", c.Param("id"), err))
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// classifyFileContent sniffs data for the file-browser's view panel: images
+// render inline, text is editable, anything else is reported as binary so
+// the UI can hide the view/edit actions (SPEC's "lightweight file manager,
+// not a full editor").
+func classifyFileContent(data []byte) (kind, mimeType string) {
+	mimeType = http.DetectContentType(data)
+	base, _, _ := strings.Cut(mimeType, ";")
+	switch {
+	case strings.HasPrefix(base, "image/"):
+		return "image", base
+	case isLikelyText(data):
+		return "text", "text/plain; charset=utf-8"
+	default:
+		return "binary", base
+	}
+}
+
+func isLikelyText(data []byte) bool {
+	sample := data
+	if len(sample) > 8000 {
+		sample = sample[:8000]
+	}
+	if !utf8.Valid(sample) {
+		return false
+	}
+	for _, b := range sample {
+		if b == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *server) handleContainerLifecycle(c *gin.Context) {

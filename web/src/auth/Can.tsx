@@ -18,6 +18,14 @@ const REQUIRED_ROLE: Record<string, "operator" | "admin"> = {
 	"containers.remove": "operator",
 	"containers.create": "operator",
   "containers.exec": "operator",
+  "containers.files.list": "operator",
+  "containers.files.upload": "operator",
+  "containers.files.mkdir": "operator",
+  "containers.files.download": "operator",
+  "containers.files.delete": "operator",
+  "containers.files.rename": "operator",
+  "containers.files.view": "operator",
+  "containers.files.edit": "operator",
   "images.pull": "operator",
   "images.tag": "operator",
   "images.remove": "operator",
@@ -34,6 +42,10 @@ const REQUIRED_ROLE: Record<string, "operator" | "admin"> = {
   "users.write": "admin",
 };
 
+// Capabilities disabled by --allow-exec=false regardless of role, per M15.4's
+// asymmetry: listing and folder creation go through exec, upload/download do not.
+const EXEC_GATED = new Set(["containers.exec", "containers.files.list", "containers.files.mkdir", "containers.files.delete", "containers.files.rename"]);
+
 interface CanProps {
   do: string;
   children: ReactElement;
@@ -45,15 +57,21 @@ interface CanProps {
  * required role (SPEC §9: never hide controls silently).
  */
 export function Can({ do: capability, children }: CanProps) {
-  const { capabilities } = useAuth();
+  const { capabilities, user } = useAuth();
   const allowed = capabilities[capability] ?? false;
 
   if (allowed || !isValidElement(children)) return children;
 
   const requiredRole = REQUIRED_ROLE[capability] ?? "admin";
+  const roleSatisfied = user != null && ROLE_RANK[user.role] >= ROLE_RANK[requiredRole];
+  const title = EXEC_GATED.has(capability) && roleSatisfied
+    ? "Unavailable: the server was started with --allow-exec=false"
+    : `Requires the ${requiredRole} role`;
   return cloneElement(children as ReactElement<Record<string, unknown>>, {
     disabled: true,
     "aria-disabled": true,
-    title: `Requires the ${requiredRole} role`,
+    title,
   });
 }
+
+const ROLE_RANK: Record<string, number> = { viewer: 1, operator: 2, admin: 3 };

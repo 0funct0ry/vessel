@@ -51,3 +51,5 @@ export interface CreateContainerResponse { id: string; name: string; warnings: s
 export interface PullEvent { id: string; status: string; current?: number; total?: number; error?: string }
 export interface Stats { ts: string; cpu_pct: number | null; mem: { used: number; limit: number }; net: { rx: number; tx: number }; blk: { read: number; write: number } }
 export interface LogLine { ts?: string; stream: "stdout" | "stderr" | "vessel"; line: string }
+export interface ContainerFileEntry { name: string; path: string; type: "file" | "dir" | "symlink"; size: number; mode: string; modified_at: string }
+export interface ContainerFileView { name: string; size: number; mime: string; kind: "text" | "image" | "binary"; content?: string }

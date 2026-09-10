@@ -28,7 +28,7 @@ function setSocketUnreachable(unreachable: boolean) {
   for (const fn of socketListeners) fn(unreachable);
 }
 
-function apiRoot(): string {
+export function apiRoot(): string {
   const base = basePath();
   return (base === "/" ? "" : base) + "/api/v1";
 }
@@ -83,6 +83,14 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body }),
+  put: <T>(path: string, body?: unknown) => request<T>(path, { method: "PUT", body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  upload: async <T>(path: string, body: FormData): Promise<T> => {
+    const headers = new Headers({ Accept: "application/json" }); const token = getToken(); if (token) headers.set("Authorization", `Bearer ${token}`);
+    const res = await fetch(apiRoot() + path, { method: "POST", headers, body });
+    if (res.status === 204) return undefined as T;
+    if (!res.ok) { let err: ApiError = { code: "unknown", message: res.statusText }; try { const parsed = await res.json(); if (parsed?.error) err = parsed.error; } catch { /* retain fallback */ } throw new ApiRequestError(res.status, err); }
+    return res.json() as Promise<T>;
+  },
 };

@@ -50,9 +50,19 @@ type fakeDockerClient struct {
 	statsCalls     []string
 	execCalls      []dockerapi.ExecOptions
 	execCreate     func(dockerapi.ExecOptions) (string, error)
+	files          []dockerapi.FileEntry
+	uploadBody     []byte
+	uploadPath     string
+	download       io.ReadCloser
 	createSpec     dockerapi.Spec
 	createResult   dockerapi.CreateResult
 	createErr      error
+	removeCalls    []string
+	renameCalls    [][2]string
+	readFileName   string
+	readFileData   []byte
+	writeFilePath  string
+	writeFileData  []byte
 }
 
 func newFakeDockerClient() *fakeDockerClient {
@@ -195,6 +205,34 @@ func (f *fakeDockerClient) StartExec(context.Context, string, bool) (dockerapi.E
 	return nil, f.err
 }
 func (f *fakeDockerClient) ResizeExec(context.Context, string, int, int) error { return f.err }
+func (f *fakeDockerClient) ListDirectory(context.Context, string, string) ([]dockerapi.FileEntry, error) {
+	return f.files, f.err
+}
+func (f *fakeDockerClient) UploadFiles(_ context.Context, _ string, dir string, body io.Reader) error {
+	f.uploadPath = dir
+	f.uploadBody, _ = io.ReadAll(body)
+	return f.err
+}
+func (f *fakeDockerClient) CreateDirectory(context.Context, string, string) error { return f.err }
+func (f *fakeDockerClient) DownloadPath(context.Context, string, string) (io.ReadCloser, error) {
+	return f.download, f.err
+}
+func (f *fakeDockerClient) RemovePath(_ context.Context, _ string, path string) error {
+	f.removeCalls = append(f.removeCalls, path)
+	return f.err
+}
+func (f *fakeDockerClient) RenamePath(_ context.Context, _ string, from, to string) error {
+	f.renameCalls = append(f.renameCalls, [2]string{from, to})
+	return f.err
+}
+func (f *fakeDockerClient) ReadFile(context.Context, string, string) (string, []byte, error) {
+	return f.readFileName, f.readFileData, f.err
+}
+func (f *fakeDockerClient) WriteFile(_ context.Context, _ string, path string, data []byte) error {
+	f.writeFilePath = path
+	f.writeFileData = data
+	return f.err
+}
 
 func performRequest(router http.Handler, method, target string) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()

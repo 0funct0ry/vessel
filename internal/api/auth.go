@@ -145,6 +145,10 @@ func (s *server) capabilities(role store.Role) map[string]bool {
 	capabilities := auth.Capabilities(role)
 	if !s.execOn {
 		delete(capabilities, "containers.exec")
+		delete(capabilities, "containers.files.list")
+		delete(capabilities, "containers.files.mkdir")
+		delete(capabilities, "containers.files.delete")
+		delete(capabilities, "containers.files.rename")
 	}
 	return capabilities
 }

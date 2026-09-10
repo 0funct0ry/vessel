@@ -46,4 +46,12 @@ type DockerClient interface {
 	CreateExec(context.Context, string, dockerapi.ExecOptions) (string, error)
 	StartExec(context.Context, string, bool) (dockerapi.ExecSession, error)
 	ResizeExec(context.Context, string, int, int) error
+	ListDirectory(context.Context, string, string) ([]dockerapi.FileEntry, error)
+	UploadFiles(context.Context, string, string, io.Reader) error
+	CreateDirectory(context.Context, string, string) error
+	DownloadPath(context.Context, string, string) (io.ReadCloser, error)
+	RemovePath(context.Context, string, string) error
+	RenamePath(context.Context, string, string, string) error
+	ReadFile(context.Context, string, string) (string, []byte, error)
+	WriteFile(context.Context, string, string, []byte) error
 }

@@ -30,6 +30,10 @@ type queryError struct {
 
 type validationError struct{ code, message string }
 
+type containerNotRunningError struct{}
+
+func (containerNotRunningError) Error() string { return "container is not running" }
+
 func (e *validationError) Error() string { return e.message }
 func invalidInput(format string, args ...any) error {
 	return &validationError{code: "invalid_request", message: fmt.Sprintf(format, args...)}
@@ -79,6 +83,7 @@ func Fail(c *gin.Context, err error) {
 	var verr *validationError
 	var rerr *resourceError
 	var apiErr *dockerapi.APIError
+	var runningErr containerNotRunningError
 	switch {
 	case errors.As(err, &qerr):
 		status = http.StatusBadRequest
@@ -86,6 +91,9 @@ func Fail(c *gin.Context, err error) {
 	case errors.As(err, &verr):
 		status = http.StatusBadRequest
 		body = errorBody{Code: verr.code, Message: verr.message}
+	case errors.As(err, &runningErr):
+		status = http.StatusConflict
+		body = errorBody{Code: "container_not_running", Message: "container must be running", DockerStatus: http.StatusConflict}
 	case errors.Is(err, dockerapi.ErrUnreachable):
 		status = http.StatusServiceUnavailable
 		body = errorBody{Code: "docker_unreachable", Message: "Docker Engine is unreachable"}
