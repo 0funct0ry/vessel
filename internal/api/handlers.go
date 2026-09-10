@@ -1256,6 +1256,21 @@ func (s *server) handleImageHistory(c *gin.Context) {
 	c.JSON(http.StatusOK, historyToView(layers))
 }
 
+func (s *server) handleImageDockerfile(c *gin.Context) {
+	id := c.Param("id")
+	image, err := s.docker.InspectImage(c.Request.Context(), id)
+	if err != nil {
+		Fail(c, forResource("image", id, err))
+		return
+	}
+	history, err := s.docker.History(c.Request.Context(), id)
+	if err != nil {
+		Fail(c, forResource("image", id, err))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"dockerfile": dockerapi.ReconstructDockerfile(history, image.Config), "approximate": true})
+}
+
 func (s *server) handleVolumes(c *gin.Context) {
 	query, err := parseCollectionQuery(c.Request.URL.Query(), "volumes")
 	if err != nil {

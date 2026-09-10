@@ -45,6 +45,7 @@ export interface Image { id: string; repo_tags: string[]; repo_digests: string[]
 export interface ImageUse { container_id: string; container_name: string; state: string }
 export interface ImageDetail { id: string; repo_tags: string[]; repo_digests: string[]; created: string; size: number; architecture: string; os: string; env: string[]; entrypoint: string[]; cmd: string[]; labels: Record<string, string>; used_by_count: number; used_by: ImageUse[]; dangling: boolean; raw: unknown }
 export interface HistoryLayer { id: string; created: number; created_by: string; size: number; comment: string; tags: string[] }
+export interface DockerfileReconstruction { dockerfile: string; approximate: true }
 export interface Volume { name: string; driver: string }
 export interface Network { id: string; name: string; driver: string }
 export interface CreateContainerResponse { id: string; name: string; warnings: string[]; start_error?: string }

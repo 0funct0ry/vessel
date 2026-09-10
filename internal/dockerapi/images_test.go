@@ -145,3 +145,38 @@ func TestHistory(t *testing.T) {
 		t.Fatalf("layers[1] = %+v", layers[1])
 	}
 }
+
+func TestReconstructDockerfile(t *testing.T) {
+	tests := []struct {
+		name    string
+		history []HistoryLayer
+		cfg     ImageConfig
+		want    string
+	}{
+		{
+			name: "shell raw missing and config",
+			history: []HistoryLayer{
+				{ID: "sha256:top", CreatedBy: "/bin/sh -c make build"},
+				{ID: "<missing>", CreatedBy: "ADD file:abc in /"},
+				{ID: "sha256:base", CreatedBy: ""},
+			},
+			cfg: ImageConfig{
+				Env: []string{"APP=api", "PORT=8080"}, ExposedPorts: map[string]struct{}{"443/tcp": {}, "80/tcp": {}},
+				WorkingDir: "/app", User: "vessel", Labels: map[string]string{"org.opencontainers.image.title": "api", "maintainer": "Vessel Team"},
+				Entrypoint: []string{"/app/api"}, Cmd: []string{"serve", "--port", "8080"},
+			},
+			want: "# FROM unknown — base image cannot be recovered from history\n" +
+				"# <missing> layer has no local metadata\n# ADD file:abc in /\nmake build\n" +
+				"ENV APP=api\nENV PORT=8080\nEXPOSE 443/tcp\nEXPOSE 80/tcp\nWORKDIR /app\nUSER vessel\n" +
+				"LABEL maintainer=\"Vessel Team\"\nLABEL org.opencontainers.image.title=\"api\"\n" +
+				"ENTRYPOINT [\"/app/api\"]\nCMD [\"serve\",\"--port\",\"8080\"]\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ReconstructDockerfile(test.history, test.cfg); got != test.want {
+				t.Fatalf("ReconstructDockerfile() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}

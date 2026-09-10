@@ -11,7 +11,7 @@ import { basePath } from "../lib/basePath";
 import { bytes } from "../lib/containers";
 import { pullImage, streamSSE } from "../lib/pullStream";
 import { recentPulls, rememberPull } from "../lib/recentPulls";
-import type { Host, HistoryLayer, Image, ImageDetail, PullEvent } from "../types/api";
+import type { DockerfileReconstruction, Host, HistoryLayer, Image, ImageDetail, PullEvent } from "../types/api";
 
 function imagesQuery(input: { q: string; sort: string }): string {
   const p = new URLSearchParams();
@@ -524,6 +524,30 @@ function HistoryTab({ id }: { id: string }) {
   </table></div>;
 }
 
+function DockerfileTab({ id }: { id: string }) {
+  const { push } = useToast();
+  const reconstruction = useQuery({ queryKey: ["image-dockerfile", id], queryFn: () => api.get<DockerfileReconstruction>(`/images/${encodeURIComponent(id)}/dockerfile`) });
+  const dockerfile = reconstruction.data?.dockerfile ?? "";
+  async function copy() {
+    try { await navigator.clipboard.writeText(dockerfile); push("Dockerfile copied."); }
+    catch { push("Could not copy Dockerfile. Select it and copy manually.", "error"); }
+  }
+  function download() {
+    try {
+      const url = URL.createObjectURL(new Blob([dockerfile], { type: "text/plain;charset=utf-8" }));
+      const link = document.createElement("a"); link.href = url; link.download = "Dockerfile";
+      document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch { push("Could not download Dockerfile.", "error"); }
+  }
+  if (reconstruction.isLoading) return <EmptyState title="Reconstructing Dockerfile" action="Reading image history from Docker…" />;
+  if (reconstruction.isError) return <EmptyState title="Could not reconstruct Dockerfile" action="Refresh the page or check that Docker can inspect this image." />;
+  return <div>
+    <div className="mb-3 rounded border border-[#E3CB93] border-l-[3px] border-l-pause bg-[#FDF8EC] px-3 py-2 text-[13px]">Best-effort reconstruction from image history — the original Dockerfile is not stored by Docker and this may not rebuild identically.</div>
+    <div className="mb-2 flex items-center"><span className="text-[13px] text-muted">Reconstructed Dockerfile</span><div className="ml-auto flex gap-2"><Button onClick={() => void copy()}>Copy</Button><Button onClick={download}>Download as Dockerfile</Button></div></div>
+    <pre className="max-h-[65vh] overflow-auto rounded border border-line bg-ink p-4 text-[12px] text-[#D7E7EA]">{dockerfile}</pre>
+  </div>;
+}
+
 export function ImageDetailPage() {
   const { id = "" } = useParams();
   const { push } = useToast();
@@ -547,7 +571,7 @@ export function ImageDetailPage() {
       <span className="font-mono text-[12px] text-muted">{shortID(image.id)}</span>
       <span className="flex-1" /><Can do="containers.create"><Button variant="primary" disabled={!image.repo_tags[0] || image.repo_tags[0] === "<none>:<none>"} onClick={() => setRun(true)}>Run</Button></Can>
     </div>
-    <div role="tablist" className="mb-4 flex gap-1 border-b border-line">{["overview", "history", "inspect"].map((name) => <button key={name} role="tab" aria-selected={tabName === name} onClick={() => setTabName(name)} className={`px-3 py-2 text-[13px] capitalize ${tabName === name ? "border-b-2 border-hull font-medium" : "text-muted"}`}>{name}</button>)}</div>
+    <div role="tablist" className="mb-4 flex gap-1 border-b border-line">{["overview", "history", "dockerfile", "inspect"].map((name) => <button key={name} role="tab" aria-selected={tabName === name} onClick={() => setTabName(name)} className={`px-3 py-2 text-[13px] capitalize ${tabName === name ? "border-b-2 border-hull font-medium" : "text-muted"}`}>{name}</button>)}</div>
     {tabName === "overview" && <div className="grid gap-3 md:grid-cols-2">
       <Info title="Configuration" rows={[["Architecture", image.architecture || "—"], ["OS", image.os || "—"], ["Entrypoint", image.entrypoint.join(" ") || "—"], ["Command", image.cmd.join(" ") || "—"], ["Size", bytes(image.size)]]} />
       <Info title="Labels" rows={Object.entries(image.labels)} />
@@ -558,6 +582,7 @@ export function ImageDetailPage() {
       </div>
     </div>}
     {tabName === "history" && <HistoryTab id={image.id} />}
+    {tabName === "dockerfile" && <DockerfileTab id={image.id} />}
     {tabName === "inspect" && <div><div className="mb-2 flex items-center"><span className="text-[13px] text-muted">Full engine response</span><Button className="ml-auto" onClick={() => void copy()}>Copy JSON</Button></div><pre className="max-h-[65vh] overflow-auto rounded border border-line bg-ink p-4 text-[12px] text-[#D7E7EA]">{JSON.stringify(image.raw, null, 2)}</pre></div>}
     {run && <CreateContainerModal image={image.repo_tags[0]} close={() => setRun(false)} />}
   </section>;

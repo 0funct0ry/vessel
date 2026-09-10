@@ -18,6 +18,7 @@ func TestRequiredRole(t *testing.T) {
 		{http.MethodGet, "/api/v1/images/export", store.RoleOperator, true},
 		{http.MethodPost, "/api/v1/images/import", store.RoleOperator, true},
 		{http.MethodPost, "/api/v1/images/build", store.RoleOperator, true},
+		{http.MethodGet, "/api/v1/images/abc/dockerfile", store.RoleViewer, true},
 		{http.MethodPost, "/api/v1/prune/images", store.RoleAdmin, true},
 		{http.MethodGet, "/api/v1/health", "", false},
 		{http.MethodPut, "/api/v1/containers/abc", "", false},
@@ -40,7 +41,7 @@ func TestAllowsAndCapabilities(t *testing.T) {
 	if viewer["containers.stop"] {
 		t.Fatal("viewer unexpectedly can stop containers")
 	}
-	if !viewer["containers.read"] || viewer["images.remove"] {
+	if !viewer["containers.read"] || !viewer["images.dockerfile"] || viewer["images.remove"] {
 		t.Fatalf("viewer capabilities = %#v", viewer)
 	}
 	operator := Capabilities(store.RoleOperator)

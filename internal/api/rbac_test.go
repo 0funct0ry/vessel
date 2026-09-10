@@ -50,6 +50,7 @@ var protectedRoutes = []protectedRoute{
 	{http.MethodGet, "/api/v1/images", "", store.RoleViewer},
 	{http.MethodGet, "/api/v1/images/i1", "", store.RoleViewer},
 	{http.MethodGet, "/api/v1/images/i1/history", "", store.RoleViewer},
+	{http.MethodGet, "/api/v1/images/i1/dockerfile", "", store.RoleViewer},
 	{http.MethodPost, "/api/v1/images/build", "", store.RoleOperator},
 	{http.MethodPost, "/api/v1/images/pull", `{"reference":"repo:tag"}`, store.RoleOperator},
 	{http.MethodPost, "/api/v1/images/i1/tag", `{"repo":"repo","tag":"tag"}`, store.RoleOperator},

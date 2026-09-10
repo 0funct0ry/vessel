@@ -316,6 +316,31 @@ func TestImageHistoryJSON(t *testing.T) {
 	]`)
 }
 
+func TestImageDockerfileJSON(t *testing.T) {
+	fake := newFakeDockerClient()
+	fake.image = &dockerapi.ImageDetail{Config: dockerapi.ImageConfig{Env: []string{"PORT=8080"}, WorkingDir: "/app", Cmd: []string{"server"}}}
+	fake.history = []dockerapi.HistoryLayer{{ID: "sha256:top", CreatedBy: "/bin/sh -c make build"}, {ID: "<missing>", CreatedBy: "ADD file:abc in /"}}
+	router := NewRouter(Config{Docker: fake})
+
+	response := performRequest(router, http.MethodGet, "/api/v1/images/img/dockerfile")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", response.Code, response.Body.String())
+	}
+	assertJSON(t, response.Body.String(), `{"dockerfile":"# FROM unknown — base image cannot be recovered from history\n# <missing> layer has no local metadata\n# ADD file:abc in /\nmake build\nENV PORT=8080\nWORKDIR /app\nCMD [\"server\"]\n","approximate":true}`)
+}
+
+func TestImageDockerfileNotFound(t *testing.T) {
+	fake := newFakeDockerClient()
+	fake.err = fmt.Errorf("%w: daemon detail", dockerapi.ErrNotFound)
+	router := NewRouter(Config{Docker: fake})
+
+	response := performRequest(router, http.MethodGet, "/api/v1/images/missing/dockerfile")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", response.Code, response.Body.String())
+	}
+	assertJSON(t, response.Body.String(), `{"error":{"code":"image_not_found","message":"no such image: missing","docker_status":404}}`)
+}
+
 func TestVolumeListJoinExactJSON(t *testing.T) {
 	fake := newFakeDockerClient()
 	fake.volumes = []dockerapi.Volume{{

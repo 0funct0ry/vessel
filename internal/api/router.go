@@ -101,6 +101,7 @@ func NewRouter(cfg Config) *gin.Engine {
 	v1.GET("/images", s.handleImages)
 	v1.GET("/images/:id", s.handleImage)
 	v1.GET("/images/:id/history", s.handleImageHistory)
+	v1.GET("/images/:id/dockerfile", s.handleImageDockerfile)
 	v1.GET("/images/export", s.handleImageExport)
 	v1.POST("/images/import", s.handleImageImport)
 	v1.POST("/images/build", s.handleImageBuild)

@@ -103,7 +103,20 @@ type ImageDetail struct {
 	Entrypoint   []string
 	Cmd          []string
 	Labels       map[string]string
+	Config       ImageConfig
 	Raw          json.RawMessage
+}
+
+// ImageConfig contains the image settings that can be represented in a
+// best-effort reconstructed Dockerfile.
+type ImageConfig struct {
+	Env          []string
+	ExposedPorts map[string]struct{}
+	WorkingDir   string
+	User         string
+	Labels       map[string]string
+	Entrypoint   []string
+	Cmd          []string
 }
 
 type imageInspectResponse struct {
@@ -115,10 +128,13 @@ type imageInspectResponse struct {
 	Architecture string   `json:"Architecture"`
 	Os           string   `json:"Os"`
 	Config       struct {
-		Env        []string          `json:"Env"`
-		Entrypoint []string          `json:"Entrypoint"`
-		Cmd        []string          `json:"Cmd"`
-		Labels     map[string]string `json:"Labels"`
+		Env          []string            `json:"Env"`
+		ExposedPorts map[string]struct{} `json:"ExposedPorts"`
+		WorkingDir   string              `json:"WorkingDir"`
+		User         string              `json:"User"`
+		Entrypoint   []string            `json:"Entrypoint"`
+		Cmd          []string            `json:"Cmd"`
+		Labels       map[string]string   `json:"Labels"`
 	} `json:"Config"`
 }
 
@@ -178,6 +194,10 @@ func (c *Client) InspectImage(ctx context.Context, name string) (*ImageDetail, e
 		Entrypoint:   v.Config.Entrypoint,
 		Cmd:          v.Config.Cmd,
 		Labels:       v.Config.Labels,
-		Raw:          raw,
+		Config: ImageConfig{
+			Env: v.Config.Env, ExposedPorts: v.Config.ExposedPorts, WorkingDir: v.Config.WorkingDir,
+			User: v.Config.User, Labels: v.Config.Labels, Entrypoint: v.Config.Entrypoint, Cmd: v.Config.Cmd,
+		},
+		Raw: raw,
 	}, nil
 }
