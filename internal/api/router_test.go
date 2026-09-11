@@ -65,6 +65,8 @@ type fakeDockerClient struct {
 	readFileData   []byte
 	writeFilePath  string
 	writeFileData  []byte
+	events         *dockerapi.EventReader
+	eventsOptions  []dockerapi.EventsOptions
 }
 
 func newFakeDockerClient() *fakeDockerClient {
@@ -116,6 +118,11 @@ func (f *fakeDockerClient) StatsStream(_ context.Context, id string) (dockerapi.
 
 func (f *fakeDockerClient) Stats(context.Context, string) (dockerapi.Stats, error) {
 	return f.stats, f.err
+}
+
+func (f *fakeDockerClient) Events(_ context.Context, opts dockerapi.EventsOptions) (*dockerapi.EventReader, error) {
+	f.eventsOptions = append(f.eventsOptions, opts)
+	return f.events, f.err
 }
 
 func (f *fakeDockerClient) Top(context.Context, string, string) (*dockerapi.TopEntry, error) {

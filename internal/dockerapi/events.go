@@ -3,11 +3,23 @@ package dockerapi
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 )
+
+// EventID is stable across independent readers of the same Docker event.
+func EventID(e Event) string {
+	b := e.Raw
+	if len(b) == 0 {
+		b = []byte(fmt.Sprintf("%s\x00%s\x00%s\x00%d", e.Type, e.Action, e.Actor.ID, e.TimeNano))
+	}
+	sum := sha256.Sum256(b)
+	return fmt.Sprintf("evt_%x", sum[:12])
+}
 
 // Event is one decoded entry from GET /events.
 type Event struct {
@@ -38,6 +50,16 @@ type EventsOptions struct {
 type EventReader struct {
 	body interface{ Close() error }
 	dec  *json.Decoder
+}
+
+// NewEventReader decodes Docker event JSON from body. It is primarily useful
+// to adapters and tests that need to provide an event stream without creating
+// a full Engine client.
+func NewEventReader(body interface {
+	io.Reader
+	Close() error
+}) *EventReader {
+	return &EventReader{body: body, dec: json.NewDecoder(bufio.NewReader(body))}
 }
 
 // Close releases the underlying HTTP connection.
@@ -96,8 +118,5 @@ func (c *Client) Events(ctx context.Context, opts EventsOptions) (*EventReader, 
 		return nil, mapError(resp)
 	}
 
-	return &EventReader{
-		body: resp.Body,
-		dec:  json.NewDecoder(bufio.NewReader(resp.Body)),
-	}, nil
+	return NewEventReader(resp.Body), nil
 }

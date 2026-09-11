@@ -15,7 +15,7 @@ import (
 	"github.com/0funct0ry/vessel/internal/store"
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 type Store struct{ db *sql.DB }
 
@@ -55,10 +55,15 @@ func (s *Store) migrate(ctx context.Context) error {
 		if _, err = tx.ExecContext(ctx, store.Migration0001); err != nil {
 			return fmt.Errorf("apply migration 1: %w", err)
 		}
-		return tx.Commit()
+		v = 1
 	}
 	if v > schemaVersion {
 		return fmt.Errorf("database schema version %d is newer than this binary's version %d", v, schemaVersion)
+	}
+	if v < 2 {
+		if _, err = tx.ExecContext(ctx, store.Migration0002); err != nil {
+			return fmt.Errorf("apply migration 2: %w", err)
+		}
 	}
 	return tx.Commit()
 }
@@ -354,4 +359,70 @@ func (s *Store) UpdateDelivery(ctx context.Context, d store.Delivery) (store.Del
 		return store.Delivery{}, store.ErrNotFound
 	}
 	return d, nil
+}
+
+func scanEvent(row interface{ Scan(...any) error }) (store.Event, error) {
+	var e store.Event
+	var attrs, created string
+	if err := row.Scan(&e.ID, &e.Type, &e.Action, &e.SubjectID, &e.Name, &attrs, &created); err != nil {
+		return e, dbErr(err)
+	}
+	e.Attrs = []byte(attrs)
+	var err error
+	e.CreatedAt, err = time.Parse(time.RFC3339Nano, created)
+	return e, err
+}
+func (s *Store) CreateEvent(ctx context.Context, e store.Event) (store.Event, error) {
+	_, err := s.db.ExecContext(ctx, "INSERT INTO events(id,type,action,subject_id,name,attrs,created_at) VALUES(?,?,?,?,?,?,?)", e.ID, e.Type, e.Action, e.SubjectID, e.Name, string(e.Attrs), ts(e.CreatedAt))
+	return e, dbErr(err)
+}
+func (s *Store) ListEvents(ctx context.Context, q store.EventQuery) ([]store.Event, error) {
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	args := make([]any, 0, len(q.Types)+1)
+	where := ""
+	if len(q.Types) > 0 {
+		marks := make([]string, len(q.Types))
+		for i, v := range q.Types {
+			marks[i] = "?"
+			args = append(args, v)
+		}
+		where = " WHERE type IN (" + strings.Join(marks, ",") + ")"
+	}
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, "SELECT id,type,action,subject_id,name,attrs,created_at FROM events"+where+" ORDER BY created_at DESC,id DESC LIMIT ?", args...)
+	if err != nil {
+		return nil, dbErr(err)
+	}
+	defer rows.Close()
+	out := []store.Event{}
+	for rows.Next() {
+		e, err := scanEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+func (s *Store) DeleteEvent(ctx context.Context, id string) error {
+	r, err := s.db.ExecContext(ctx, "DELETE FROM events WHERE id=?", id)
+	if err != nil {
+		return dbErr(err)
+	}
+	n, _ := r.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+func (s *Store) ClearEvents(ctx context.Context) (int64, error) {
+	r, err := s.db.ExecContext(ctx, "DELETE FROM events")
+	if err != nil {
+		return 0, dbErr(err)
+	}
+	n, _ := r.RowsAffected()
+	return n, nil
 }

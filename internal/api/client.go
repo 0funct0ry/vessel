@@ -19,6 +19,7 @@ type DockerClient interface {
 	LogStream(context.Context, string, dockerapi.LogsOptions) (dockerapi.LogStream, error)
 	StatsStream(context.Context, string) (dockerapi.StatsStream, error)
 	Stats(context.Context, string) (dockerapi.Stats, error)
+	Events(context.Context, dockerapi.EventsOptions) (*dockerapi.EventReader, error)
 	Top(context.Context, string, string) (*dockerapi.TopEntry, error)
 	ListImages(context.Context, bool) ([]dockerapi.Image, error)
 	InspectImage(context.Context, string) (*dockerapi.ImageDetail, error)

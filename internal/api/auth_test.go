@@ -139,3 +139,24 @@ func TestStatsSSEAcceptsValidQueryToken(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestEventsSSEAcceptsValidQueryToken(t *testing.T) {
+	s := memstore.New()
+	tokens, _, err := auth.LoadTokens(context.Background(), s, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := tokens.Issue(store.User{ID: 1, Username: "alice", Role: store.RoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := newFakeDockerClient()
+	fake.events = dockerapi.NewEventReader(io.NopCloser(strings.NewReader("")))
+	router := NewRouter(Config{Docker: fake, Store: s, AuthEnabled: true, Tokens: tokens})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?token="+token, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}

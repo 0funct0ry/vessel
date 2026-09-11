@@ -113,6 +113,28 @@ func testStore(t *testing.T, open newStore) {
 	if _, err := s.GetDelivery(ctx, d.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("cascade delete = %v", err)
 	}
+
+	e1 := store.Event{ID: "evt_one", Type: "container", Action: "start", SubjectID: "c1", Name: "api", Attrs: []byte(`{"image":"acme/api:1"}`), CreatedAt: now}
+	e2 := store.Event{ID: "evt_two", Type: "image", Action: "pull", SubjectID: "i1", Name: "acme/api:2", Attrs: []byte(`{}`), CreatedAt: now.Add(time.Second)}
+	if _, err := s.CreateEvent(ctx, e1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateEvent(ctx, e2); err != nil {
+		t.Fatal(err)
+	}
+	events, err := s.ListEvents(ctx, store.EventQuery{Limit: 1, Types: []string{"image"}})
+	if err != nil || len(events) != 1 || events[0].ID != e2.ID {
+		t.Fatalf("events = %#v, %v", events, err)
+	}
+	if err := s.DeleteEvent(ctx, e1.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ListEvents(ctx, store.EventQuery{Limit: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.ClearEvents(ctx); err != nil || n != 1 {
+		t.Fatalf("cleared = %d, %v", n, err)
+	}
 }
 
 func TestMemoryDeliveryRetention(t *testing.T) {
@@ -147,7 +169,7 @@ func TestSQLiteMigrationAndNewerSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	v, err := s.SchemaVersion(context.Background())
-	if err != nil || v != 1 {
+	if err != nil || v != 2 {
 		t.Fatalf("version = %d, %v", v, err)
 	}
 	_ = s.Close()
@@ -158,7 +180,7 @@ func TestSQLiteMigrationAndNewerSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("UPDATE schema_version SET version=2"); err != nil {
+	if _, err := db.Exec("UPDATE schema_version SET version=3"); err != nil {
 		t.Fatal(err)
 	}
 	_ = db.Close()

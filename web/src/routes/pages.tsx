@@ -1,4 +1,5 @@
 import { EmptyState } from "../components/ui/EmptyState";
+import { DashboardPage, EventsPage } from "./dashboard";
 export { NetworkDetailPage, NetworksPage, VolumeDetailPage, VolumesPage } from "./resources";
 export { ContainersPage } from "./containers";
 export { M156ContainerDetailPage as ContainerDetailPage } from "../components/containers/ContainerDetailM156";
@@ -9,13 +10,7 @@ export { ImageDetailPage, ImagesPage } from "./images";
 // M17 (dashboard/events), M18 (webhooks). Each stub still follows the
 // "empty states name the fix" rule.
 
-export function DashboardPage() {
-  return <EmptyState title="Dashboard is not built yet" action="This lands in M17." />;
-}
-
-export function EventsPage() {
-  return <EmptyState title="No events yet" action="The live event feed lands in M17." />;
-}
+export { DashboardPage, EventsPage };
 
 export function WebhooksPage() {
   return <EmptyState title="No webhooks configured yet" action="Webhook management lands in M18." />;

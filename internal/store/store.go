@@ -72,6 +72,21 @@ type DeliveryQuery struct {
 	Cursor string
 }
 
+type Event struct {
+	ID        string
+	Type      string
+	Action    string
+	SubjectID string
+	Name      string
+	Attrs     []byte
+	CreatedAt time.Time
+}
+
+type EventQuery struct {
+	Limit int
+	Types []string
+}
+
 // Store is deliberately expressed in domain values so API, auth, and webhook
 // code do not need to know which persistence backend is active.
 type Store interface {
@@ -95,6 +110,11 @@ type Store interface {
 	GetDelivery(context.Context, string) (Delivery, error)
 	ListDeliveries(context.Context, string, DeliveryQuery) ([]Delivery, error)
 	UpdateDelivery(context.Context, Delivery) (Delivery, error)
+
+	CreateEvent(context.Context, Event) (Event, error)
+	ListEvents(context.Context, EventQuery) ([]Event, error)
+	DeleteEvent(context.Context, string) error
+	ClearEvents(context.Context) (int64, error)
 
 	Close() error
 }

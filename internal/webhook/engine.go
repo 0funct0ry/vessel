@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	mathrand "math/rand/v2"
 	"net/http"
 	"sync"
@@ -93,11 +94,30 @@ func (e *Engine) read(ctx context.Context, source EventSource) {
 	}
 }
 func (e *Engine) Dispatch(ctx context.Context, event dockerapi.Event) {
+	attrs, err := json.Marshal(event.Actor.Attributes)
+	if err != nil {
+		return
+	}
+	name := event.Actor.Attributes["name"]
+	if name == "" {
+		name = event.Actor.Attributes["container"]
+	}
+	created := time.Unix(event.Time, 0).UTC()
+	if event.TimeNano > 0 {
+		created = time.Unix(0, event.TimeNano).UTC()
+	}
+	stored, err := e.store.CreateEvent(ctx, store.Event{ID: dockerapi.EventID(event), Type: event.Type, Action: event.Action, SubjectID: event.Actor.ID, Name: name, Attrs: attrs, CreatedAt: created})
+	if err != nil && !errors.Is(err, store.ErrConflict) {
+		return
+	}
+	if errors.Is(err, store.ErrConflict) {
+		stored.ID = dockerapi.EventID(event)
+	}
 	webhooks, err := e.store.ListWebhooks(ctx)
 	if err != nil {
 		return
 	}
-	eid := newID("evt_", 8)
+	eid := stored.ID
 	for _, w := range webhooks {
 		if !Matches(w, event) {
 			continue
