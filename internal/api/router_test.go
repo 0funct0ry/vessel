@@ -189,6 +189,16 @@ func (f *fakeDockerClient) CreateContainer(_ context.Context, spec dockerapi.Spe
 	}
 	return f.createResult, f.err
 }
+func (f *fakeDockerClient) RecreateContainer(_ context.Context, _ string, spec dockerapi.Spec) (dockerapi.CreateResult, error) {
+	f.createSpec = spec
+	if f.createResult.ID == "" {
+		f.createResult.ID = "new-container"
+	}
+	if f.createErr != nil {
+		return f.createResult, f.createErr
+	}
+	return f.createResult, f.err
+}
 func (f *fakeDockerClient) CommitContainer(_ context.Context, _ string, opts dockerapi.CommitOptions) (dockerapi.CommitResult, error) {
 	f.commitOptions = opts
 	if f.commitResult.ImageID == "" {
@@ -584,7 +594,7 @@ func TestNetworkDetailAndContainerDetailJSON(t *testing.T) {
 	assertJSON(t, response.Body.String(), `{"id":"n1","name":"edge","driver":"bridge","scope":"local","internal":false,"attachable":false,"enable_ipv6":false,"ipam_driver":"","ipam":[{"subnet":"172.20.0.0/16","gateway":"172.20.0.1"}],"ipam_options":{},"driver_opts":{},"labels":{},"containers":[{"container_id":"c1","container_name":"api","ipv4_address":"172.20.0.2/16","ipv6_address":"fd00::2/64"},{"container_id":"c2","container_name":"worker","ipv4_address":"172.20.0.3/16","ipv6_address":""}],"raw":{"Id":"n1"}}`)
 
 	response = performRequest(router, http.MethodGet, "/api/v1/containers/c1")
-	assertJSON(t, response.Body.String(), `{"id":"c1","name":"api","image":"acme/api:1","command":[],"created":"now","state":"running","status":"running","exit_code":0,"health":"","restart_policy":"","mounts":[],"networks":{},"env":[],"labels":{},"raw":{"Id":"c1"}}`)
+	assertJSON(t, response.Body.String(), `{"id":"c1","name":"api","image":"acme/api:1","command":[],"created":"now","state":"running","status":"running","exit_code":0,"health":"","restart_policy":"","mounts":[],"networks":{},"env":[],"labels":{},"ports":[],"security":{"privileged":false,"readonly_rootfs":false,"user":"","userns_mode":"","apparmor_profile":""},"resources":{"cpu_shares":0,"cpus":0,"memory":0,"memory_swap":0,"memory_reservation":0,"pids_limit":0,"oom_kill_disable":false,"cpu_period":0,"cpu_quota":0,"cgroup_parent":"","cgroupns_mode":""},"raw":{"Id":"c1"}}`)
 }
 
 func TestNetworksListReflectsConnectedContainers(t *testing.T) {

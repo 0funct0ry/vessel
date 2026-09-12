@@ -18,6 +18,7 @@ type errorBody struct {
 	DockerStatus int        `json:"docker_status,omitempty"`
 	Required     store.Role `json:"required,omitempty"`
 	Actual       store.Role `json:"actual,omitempty"`
+	FreedName    string     `json:"freed_name,omitempty"`
 }
 
 type errorEnvelope struct {
@@ -84,7 +85,15 @@ func Fail(c *gin.Context, err error) {
 	var rerr *resourceError
 	var apiErr *dockerapi.APIError
 	var runningErr containerNotRunningError
+	var recreateErr *dockerapi.RecreateFailed
 	switch {
+	case errors.As(err, &recreateErr):
+		status = http.StatusConflict
+		body = errorBody{
+			Code:      "recreate_failed",
+			Message:   fmt.Sprintf("container %s was removed but the replacement failed to start: %s", recreateErr.FreedName, dockerMessage(recreateErr.Err)),
+			FreedName: recreateErr.FreedName,
+		}
 	case errors.As(err, &qerr):
 		status = http.StatusBadRequest
 		body = errorBody{Code: "invalid_query", Message: qerr.message}

@@ -15,6 +15,8 @@ func TestRequiredRole(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/v1/containers/abc/logs", store.RoleViewer, true},
 		{http.MethodPost, "/api/v1/containers/abc/stop", store.RoleOperator, true},
+		{http.MethodPost, "/api/v1/containers/abc/recreate", store.RoleOperator, true},
+		{http.MethodGet, "/api/v1/host/next-port", store.RoleViewer, true},
 		{http.MethodGet, "/api/v1/images/export", store.RoleOperator, true},
 		{http.MethodPost, "/api/v1/images/import", store.RoleOperator, true},
 		{http.MethodPost, "/api/v1/images/build", store.RoleOperator, true},

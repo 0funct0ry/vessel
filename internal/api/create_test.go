@@ -45,3 +45,40 @@ func TestContainerCreateStartFailureIsStillCreated(t *testing.T) {
 		t.Fatalf("status=%d body=%s", got.Code, got.Body.String())
 	}
 }
+
+func TestContainerRecreatePreservesExistingNameRegardlessOfBody(t *testing.T) {
+	fake := newFakeDockerClient()
+	fake.createResult = dockerapi.CreateResult{ID: "recreated"}
+	router := NewRouter(Config{Docker: fake})
+	got := mutationRequest(router, http.MethodPost, "/api/v1/containers/existing/recreate", `{"name":"a-different-name","image":"alpine:3"}`)
+	if got.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", got.Code, got.Body.String())
+	}
+	if fake.createSpec.Name != "" {
+		t.Fatalf("spec.Name=%q, want empty — RecreateContainer alone decides the freed name", fake.createSpec.Name)
+	}
+}
+
+func TestContainerRecreateFailureReturnsFreedName(t *testing.T) {
+	fake := newFakeDockerClient()
+	fake.createErr = &dockerapi.RecreateFailed{FreedName: "app", Err: dockerapi.ErrConflict}
+	router := NewRouter(Config{Docker: fake})
+	got := mutationRequest(router, http.MethodPost, "/api/v1/containers/existing/recreate", `{"image":"alpine:3"}`)
+	if got.Code != http.StatusConflict || !bytes.Contains(got.Body.Bytes(), []byte(`"freed_name":"app"`)) {
+		t.Fatalf("status=%d body=%s", got.Code, got.Body.String())
+	}
+}
+
+func TestHostNextPort(t *testing.T) {
+	fake := newFakeDockerClient()
+	fake.containers = []dockerapi.Container{
+		{ID: "c1", Ports: []dockerapi.Port{{PrivatePort: 80, PublicPort: 1024}}},
+		{ID: "c2", Ports: []dockerapi.Port{{PrivatePort: 80, PublicPort: 1025}}},
+	}
+	router := NewRouter(Config{Docker: fake})
+	got := mutationRequest(router, http.MethodGet, "/api/v1/host/next-port?from=1024", "")
+	if got.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", got.Code, got.Body.String())
+	}
+	assertJSON(t, got.Body.String(), `{"port":1026}`)
+}

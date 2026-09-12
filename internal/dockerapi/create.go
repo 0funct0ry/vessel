@@ -26,6 +26,8 @@ type Spec struct {
 	Ports                  []PortSpec
 	Mounts                 []MountSpec
 	Network, RestartPolicy string
+	MacAddress             string
+	AdditionalNetworks     []string
 	Labels                 map[string]string
 	Start                  bool
 }
@@ -69,14 +71,20 @@ func (c *Client) CreateContainer(ctx context.Context, spec Spec) (CreateResult, 
 	type restart struct {
 		Name string `json:"Name,omitempty"`
 	}
+	type endpoint struct {
+		MacAddress string `json:"MacAddress,omitempty"`
+	}
 	request := struct {
-		Image        string              `json:"Image"`
-		Cmd          []string            `json:"Cmd,omitempty"`
-		Entrypoint   []string            `json:"Entrypoint,omitempty"`
-		Env          []string            `json:"Env,omitempty"`
-		ExposedPorts map[string]struct{} `json:"ExposedPorts,omitempty"`
-		Labels       map[string]string   `json:"Labels,omitempty"`
-		HostConfig   struct {
+		Image            string              `json:"Image"`
+		Cmd              []string            `json:"Cmd,omitempty"`
+		Entrypoint       []string            `json:"Entrypoint,omitempty"`
+		Env              []string            `json:"Env,omitempty"`
+		ExposedPorts     map[string]struct{} `json:"ExposedPorts,omitempty"`
+		Labels           map[string]string   `json:"Labels,omitempty"`
+		NetworkingConfig *struct {
+			EndpointsConfig map[string]endpoint `json:"EndpointsConfig"`
+		} `json:"NetworkingConfig,omitempty"`
+		HostConfig struct {
 			PortBindings  map[string][]binding `json:"PortBindings,omitempty"`
 			Binds         []string             `json:"Binds,omitempty"`
 			Mounts        []mount              `json:"Mounts,omitempty"`
@@ -113,6 +121,11 @@ func (c *Client) CreateContainer(ctx context.Context, spec Spec) (CreateResult, 
 	}
 	request.HostConfig.NetworkMode = spec.Network
 	request.HostConfig.RestartPolicy = restart{Name: spec.RestartPolicy}
+	if spec.MacAddress != "" && spec.Network != "" {
+		request.NetworkingConfig = &struct {
+			EndpointsConfig map[string]endpoint `json:"EndpointsConfig"`
+		}{EndpointsConfig: map[string]endpoint{spec.Network: {MacAddress: spec.MacAddress}}}
+	}
 	body, err := json.Marshal(request)
 	if err != nil {
 		return CreateResult{}, fmt.Errorf("dockerapi: encoding container create: %w", err)
@@ -138,10 +151,29 @@ func (c *Client) CreateContainer(ctx context.Context, spec Spec) (CreateResult, 
 		warnings = []string{}
 	}
 	result := CreateResult{ID: wire.ID, Warnings: warnings}
+	result.Warnings = append(result.Warnings, attachAdditionalNetworks(ctx, c, result.ID, spec.AdditionalNetworks)...)
 	if spec.Start {
 		if err := c.Lifecycle(ctx, result.ID, "start", nil); err != nil {
 			return result, &StartError{Result: result, Err: err}
 		}
 	}
 	return result, nil
+}
+
+// attachAdditionalNetworks connects a freshly created container to every
+// network beyond its primary one. Docker's create call only accepts a single
+// network in NetworkingConfig, so extras are attached with one NetworkConnect
+// call each; a failed attach is reported as a warning, not a fatal error,
+// since the container itself was already created successfully.
+func attachAdditionalNetworks(ctx context.Context, c *Client, containerID string, networks []string) []string {
+	var warnings []string
+	for _, network := range networks {
+		if network == "" {
+			continue
+		}
+		if err := c.NetworkConnect(ctx, network, containerID, false); err != nil {
+			warnings = append(warnings, fmt.Sprintf("could not attach to network %s: %v", network, err))
+		}
+	}
+	return warnings
 }

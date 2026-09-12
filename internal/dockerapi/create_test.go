@@ -51,6 +51,33 @@ func TestCreateContainerBuildsExactDockerRequest(t *testing.T) {
 	}
 }
 
+func TestCreateContainerAdditionalNetworkFailureBecomesWarning(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1.43/containers/create":
+			_, _ = io.WriteString(w, `{"Id":"c1"}`)
+		case r.URL.Path == "/v1.43/networks/extra/connect":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"message":"network not found"}`)
+		}
+	}))
+	defer srv.Close()
+	c, err := New("tcp://" + srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := c.CreateContainer(context.Background(), Spec{Image: "alpine:3", AdditionalNetworks: []string{"extra"}})
+	if err != nil {
+		t.Fatalf("CreateContainer returned a fatal error for a failed additional-network attach: %v", err)
+	}
+	if result.ID != "c1" {
+		t.Fatalf("result=%+v", result)
+	}
+	if len(result.Warnings) != 1 {
+		t.Fatalf("warnings=%v, want exactly one", result.Warnings)
+	}
+}
+
 func TestCreateContainerStartFailureRetainsResult(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1.43/containers/create" {

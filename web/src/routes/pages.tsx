@@ -1,8 +1,7 @@
 import { EmptyState } from "../components/ui/EmptyState";
 import { DashboardPage, EventsPage } from "./dashboard";
 export { NetworkDetailPage, NetworksPage, VolumeDetailPage, VolumesPage } from "./resources";
-export { ContainersPage } from "./containers";
-export { M156ContainerDetailPage as ContainerDetailPage } from "../components/containers/ContainerDetailM156";
+export { ContainerDetailPage, ContainersPage } from "./containers";
 export { ImageDetailPage, ImagesPage } from "./images";
 
 // Placeholder pages for every SPEC §9.1 route. Real content lands in

@@ -42,6 +42,28 @@ type containerView struct {
 	Labels  map[string]string `json:"labels"`
 }
 
+type containerSecurityView struct {
+	Privileged      bool   `json:"privileged"`
+	ReadonlyRootfs  bool   `json:"readonly_rootfs"`
+	User            string `json:"user"`
+	UsernsMode      string `json:"userns_mode"`
+	AppArmorProfile string `json:"apparmor_profile"`
+}
+
+type containerResourcesView struct {
+	CPUShares         int64   `json:"cpu_shares"`
+	Cpus              float64 `json:"cpus"`
+	Memory            int64   `json:"memory"`
+	MemorySwap        int64   `json:"memory_swap"`
+	MemoryReservation int64   `json:"memory_reservation"`
+	PidsLimit         int64   `json:"pids_limit"`
+	OomKillDisable    bool    `json:"oom_kill_disable"`
+	CPUPeriod         int64   `json:"cpu_period"`
+	CPUQuota          int64   `json:"cpu_quota"`
+	CgroupParent      string  `json:"cgroup_parent"`
+	CgroupnsMode      string  `json:"cgroupns_mode"`
+}
+
 type containerDetailView struct {
 	ID            string                          `json:"id"`
 	Name          string                          `json:"name"`
@@ -57,6 +79,9 @@ type containerDetailView struct {
 	Networks      map[string]containerNetworkView `json:"networks"`
 	Env           []string                        `json:"env"`
 	Labels        map[string]string               `json:"labels"`
+	Ports         []portView                      `json:"ports"`
+	Security      containerSecurityView           `json:"security"`
+	Resources     containerResourcesView          `json:"resources"`
 	Raw           json.RawMessage                 `json:"raw"`
 }
 
@@ -235,6 +260,10 @@ func containerDetailToView(v *dockerapi.ContainerDetail) containerDetailView {
 	for _, m := range v.Mounts {
 		mounts = append(mounts, mountView{m.Type, m.Name, m.Source, m.Destination, m.RW})
 	}
+	ports := make([]portView, 0, len(v.Ports))
+	for _, p := range v.Ports {
+		ports = append(ports, portView{p.IP, p.PrivatePort, p.PublicPort, p.Type})
+	}
 	networks := make(map[string]containerNetworkView, len(v.Networks))
 	for name, n := range v.Networks {
 		networks[name] = containerNetworkView{n.NetworkID, n.IPAddress}
@@ -243,7 +272,19 @@ func containerDetailToView(v *dockerapi.ContainerDetail) containerDetailView {
 		ID: v.ID, Name: strings.TrimPrefix(v.Name, "/"), Image: v.Image, Command: nonNilSlice(v.Command),
 		Created: v.Created, State: v.State, Status: v.Status, ExitCode: v.ExitCode, Health: v.Health,
 		RestartPolicy: v.RestartPolicy, Mounts: mounts, Networks: networks, Env: nonNilSlice(v.Env),
-		Labels: nonNilMap(v.Labels), Raw: v.Raw,
+		Labels: nonNilMap(v.Labels), Ports: ports,
+		Security: containerSecurityView{
+			Privileged: v.Security.Privileged, ReadonlyRootfs: v.Security.ReadonlyRootfs, User: v.Security.User,
+			UsernsMode: v.Security.UsernsMode, AppArmorProfile: v.Security.AppArmorProfile,
+		},
+		Resources: containerResourcesView{
+			CPUShares: v.Resources.CPUShares, Cpus: v.Resources.Cpus, Memory: v.Resources.Memory,
+			MemorySwap: v.Resources.MemorySwap, MemoryReservation: v.Resources.MemoryReservation,
+			PidsLimit: v.Resources.PidsLimit, OomKillDisable: v.Resources.OomKillDisable,
+			CPUPeriod: v.Resources.CPUPeriod, CPUQuota: v.Resources.CPUQuota,
+			CgroupParent: v.Resources.CgroupParent, CgroupnsMode: v.Resources.CgroupnsMode,
+		},
+		Raw: v.Raw,
 	}
 }
 

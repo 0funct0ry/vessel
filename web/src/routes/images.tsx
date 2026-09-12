@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Play, Tags, Trash2, X } from "lucide-react";
 import { Can } from "../auth/Can";
 import { CreateContainerModal } from "../components/containers/CreateContainerModal";
 import { Button } from "../components/ui/Button";
@@ -41,8 +42,8 @@ function splitRepoTag(full: string): [string, string] {
   return [full.slice(0, colon), full.slice(colon + 1)];
 }
 
-const ROW_ACTION = "rounded border border-transparent px-1.5 py-0.5 text-[12px] text-muted hover:border-line hover:bg-panel hover:text-text";
-const ROW_ACTION_DANGER = "rounded border border-transparent px-1.5 py-0.5 text-[12px] text-muted hover:border-line hover:bg-panel hover:text-fail";
+const iconAction = "rounded p-1 text-muted hover:bg-paper hover:text-text disabled:cursor-not-allowed disabled:opacity-45";
+const dangerIconAction = `${iconAction} hover:bg-fail/10 hover:text-fail`;
 
 function CopyID({ id }: { id: string }) {
   const { push } = useToast();
@@ -414,18 +415,18 @@ export function ImagesPage() {
   }
 
   function actions(image: Image) {
-    return <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
-      <Can do="containers.create"><button className={ROW_ACTION} onClick={() => setRunImage(image.repo_tags.find((tag) => tag !== "<none>:<none>") ?? "")}>run</button></Can>
-      <Can do="images.tag"><button className={ROW_ACTION} onClick={() => setTag(image)}>tag</button></Can>
-      <Can do="images.remove"><button className={ROW_ACTION_DANGER} onClick={() => setRemove(image)}>remove</button></Can>
-    </div>;
+    return <span className="inline-flex justify-end gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+      <Can do="containers.create"><button type="button" title="Run" aria-label={`Run ${image.repo_tags[0] ?? image.id}`} onClick={() => setRunImage(image.repo_tags.find((tag) => tag !== "<none>:<none>") ?? "")} className={iconAction}><Play size={15} /></button></Can>
+      <Can do="images.tag"><button type="button" title="Tag" aria-label={`Tag ${image.repo_tags[0] ?? image.id}`} onClick={() => setTag(image)} className={iconAction}><Tags size={15} /></button></Can>
+      <Can do="images.remove"><button type="button" title="Remove" aria-label={`Remove ${image.repo_tags[0] ?? image.id}`} onClick={() => setRemove(image)} className={dangerIconAction}><Trash2 size={15} /></button></Can>
+    </span>;
   }
   function tagCell(image: Image, fullTag: string, tag: string) {
     const isNone = fullTag === "<none>:<none>";
     return <span className="flex items-center gap-2">
       <span className="font-mono">{isNone ? "<none>" : tag}</span>
       {image.dangling && <span className="rounded-sm border border-[#E3CB93] px-1 font-mono text-[11px] text-pause">dangling</span>}
-      {!isNone && <Can do="images.tag"><button title="Remove this tag" onClick={() => setUntag({ image, tag: fullTag })} className={`${ROW_ACTION} opacity-0 group-hover:opacity-100 focus-within:opacity-100`}>untag</button></Can>}
+      {!isNone && <Can do="images.tag"><button type="button" title="Remove this tag" aria-label={`Remove tag ${fullTag}`} onClick={() => setUntag({ image, tag: fullTag })} className={`${iconAction} opacity-0 group-hover:opacity-100 focus-within:opacity-100`}><X size={13} /></button></Can>}
     </span>;
   }
 

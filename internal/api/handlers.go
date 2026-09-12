@@ -473,48 +473,60 @@ func (s *server) handleContainerRemove(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (s *server) handleContainerCreate(c *gin.Context) {
-	var body struct {
-		Name       string   `json:"name"`
-		Image      string   `json:"image"`
-		Command    []string `json:"command"`
-		Entrypoint []string `json:"entrypoint"`
-		Env        []string `json:"env"`
-		Ports      []struct {
-			Container string `json:"container"`
-			Host      string `json:"host"`
-			Protocol  string `json:"protocol"`
-		} `json:"ports"`
-		Mounts []struct {
-			Source   string `json:"source"`
-			Target   string `json:"target"`
-			Type     string `json:"type"`
-			ReadOnly bool   `json:"ro"`
-		} `json:"mounts"`
-		Network       string            `json:"network"`
-		RestartPolicy string            `json:"restart_policy"`
-		Labels        map[string]string `json:"labels"`
-		Start         bool              `json:"start"`
-	}
-	if err := decodeBody(c, &body); err != nil {
-		Fail(c, err)
-		return
-	}
-	if body.Name != "" {
+// containerSpecBody is the request shape for both provisioning a new
+// container and recreating an existing one in place.
+type containerSpecBody struct {
+	Name       string   `json:"name"`
+	Image      string   `json:"image"`
+	Command    []string `json:"command"`
+	Entrypoint []string `json:"entrypoint"`
+	Env        []string `json:"env"`
+	Ports      []struct {
+		Container string `json:"container"`
+		Host      string `json:"host"`
+		Protocol  string `json:"protocol"`
+	} `json:"ports"`
+	Mounts []struct {
+		Source   string `json:"source"`
+		Target   string `json:"target"`
+		Type     string `json:"type"`
+		ReadOnly bool   `json:"ro"`
+	} `json:"mounts"`
+	Network            string            `json:"network"`
+	AdditionalNetworks []string          `json:"additional_networks"`
+	MacAddress         string            `json:"mac_address"`
+	RestartPolicy      string            `json:"restart_policy"`
+	Labels             map[string]string `json:"labels"`
+	Start              bool              `json:"start"`
+}
+
+var macAddressRE = regexp.MustCompile(`^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$`)
+
+func (s *server) validateContainerSpecBody(c *gin.Context, body *containerSpecBody, requireName bool) bool {
+	if requireName {
 		if err := validResourceName(body.Name); err != nil {
 			Fail(c, err)
-			return
+			return false
+		}
+	} else if body.Name != "" {
+		if err := validResourceName(body.Name); err != nil {
+			Fail(c, err)
+			return false
 		}
 	}
 	if !imageReferenceRE.MatchString(body.Image) {
 		Fail(c, invalidImageReference("image must be repo[:tag|@digest]"))
-		return
+		return false
+	}
+	if body.MacAddress != "" && !macAddressRE.MatchString(body.MacAddress) {
+		Fail(c, invalidInput("mac_address must look like xx:xx:xx:xx:xx:xx"))
+		return false
 	}
 	if body.Network != "" {
 		networks, err := s.docker.ListNetworks(c.Request.Context())
 		if err != nil {
 			Fail(c, err)
-			return
+			return false
 		}
 		found := false
 		for _, network := range networks {
@@ -527,16 +539,37 @@ func (s *server) handleContainerCreate(c *gin.Context) {
 		}
 		if !found {
 			Fail(c, invalidInput("network must identify an existing network"))
-			return
+			return false
 		}
 	}
-	spec := dockerapi.Spec{Name: body.Name, Image: body.Image, Command: body.Command, Entrypoint: body.Entrypoint, Env: body.Env, Network: body.Network, RestartPolicy: body.RestartPolicy, Labels: body.Labels, Start: body.Start}
+	return true
+}
+
+func specFromContainerBody(body containerSpecBody) dockerapi.Spec {
+	spec := dockerapi.Spec{
+		Name: body.Name, Image: body.Image, Command: body.Command, Entrypoint: body.Entrypoint, Env: body.Env,
+		Network: body.Network, AdditionalNetworks: body.AdditionalNetworks, MacAddress: body.MacAddress,
+		RestartPolicy: body.RestartPolicy, Labels: body.Labels, Start: body.Start,
+	}
 	for _, p := range body.Ports {
 		spec.Ports = append(spec.Ports, dockerapi.PortSpec{Container: p.Container, Host: p.Host, Protocol: p.Protocol})
 	}
 	for _, m := range body.Mounts {
 		spec.Mounts = append(spec.Mounts, dockerapi.MountSpec{Source: m.Source, Target: m.Target, Type: m.Type, ReadOnly: m.ReadOnly})
 	}
+	return spec
+}
+
+func (s *server) handleContainerCreate(c *gin.Context) {
+	var body containerSpecBody
+	if err := decodeBody(c, &body); err != nil {
+		Fail(c, err)
+		return
+	}
+	if !s.validateContainerSpecBody(c, &body, false) {
+		return
+	}
+	spec := specFromContainerBody(body)
 	result, err := s.docker.CreateContainer(c.Request.Context(), spec)
 	response := gin.H{"id": result.ID, "name": body.Name, "warnings": result.Warnings}
 	var startErr *dockerapi.StartError
@@ -550,6 +583,42 @@ func (s *server) handleContainerCreate(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, response)
+}
+
+// handleContainerRecreate implements M17.4's "Edit container": stop, remove,
+// and recreate an existing container under its own (unchanged) name with a
+// new spec. The request body's name field, if any, is ignored — the name is
+// always the existing container's.
+func (s *server) handleContainerRecreate(c *gin.Context) {
+	id := c.Param("id")
+	var body containerSpecBody
+	if err := decodeBody(c, &body); err != nil {
+		Fail(c, err)
+		return
+	}
+	body.Name = ""
+	if !s.validateContainerSpecBody(c, &body, false) {
+		return
+	}
+	spec := specFromContainerBody(body)
+	result, err := s.docker.RecreateContainer(c.Request.Context(), id, spec)
+	var recreateFailed *dockerapi.RecreateFailed
+	if errors.As(err, &recreateFailed) {
+		Fail(c, recreateFailed)
+		return
+	}
+	response := gin.H{"id": result.ID, "warnings": result.Warnings}
+	var startErr *dockerapi.StartError
+	if errors.As(err, &startErr) {
+		response["start_error"] = dockerMessage(startErr)
+		c.JSON(http.StatusOK, response)
+		return
+	}
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func (s *server) handleContainerCommit(c *gin.Context) {
@@ -1482,6 +1551,43 @@ func (s *server) handlePrune(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, report)
+}
+
+// handleHostNextPort finds the first host port at or above ?from= (default
+// 1024) that no existing container currently binds, as a UX convenience for
+// the create/edit container form's port fields.
+func (s *server) handleHostNextPort(c *gin.Context) {
+	from := 1024
+	if raw, ok := c.GetQuery("from"); ok {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 65535 {
+			Fail(c, invalidInput("from must be a port number between 1 and 65535"))
+			return
+		}
+		from = parsed
+	}
+	containers, err := s.docker.ListContainers(c.Request.Context(), dockerapi.ListContainersOptions{All: true})
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	used := map[int]bool{}
+	for _, container := range containers {
+		for _, port := range container.Ports {
+			if port.PublicPort != 0 {
+				used[int(port.PublicPort)] = true
+			}
+		}
+	}
+	port := from
+	for used[port] {
+		port++
+		if port > 65535 {
+			Fail(c, invalidInput("no free port found at or above %d", from))
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"port": port})
 }
 
 func (s *server) handleHost(c *gin.Context) {

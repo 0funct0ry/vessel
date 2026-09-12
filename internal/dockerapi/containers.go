@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -111,6 +112,33 @@ type ContainerNetwork struct {
 	GlobalIPv6Address string `json:"GlobalIPv6Address"`
 }
 
+// ContainerSecurity is the security-relevant subset of a container's
+// HostConfig/Config, surfaced as its own struct rather than left buried in
+// the raw inspect JSON.
+type ContainerSecurity struct {
+	Privileged      bool   `json:"privileged"`
+	ReadonlyRootfs  bool   `json:"readonly_rootfs"`
+	User            string `json:"user"`
+	UsernsMode      string `json:"userns_mode"`
+	AppArmorProfile string `json:"apparmor_profile"`
+}
+
+// ContainerResources is the resource-limit subset of a container's
+// HostConfig.
+type ContainerResources struct {
+	CPUShares         int64   `json:"cpu_shares"`
+	Cpus              float64 `json:"cpus"`
+	Memory            int64   `json:"memory"`
+	MemorySwap        int64   `json:"memory_swap"`
+	MemoryReservation int64   `json:"memory_reservation"`
+	PidsLimit         int64   `json:"pids_limit"`
+	OomKillDisable    bool    `json:"oom_kill_disable"`
+	CPUPeriod         int64   `json:"cpu_period"`
+	CPUQuota          int64   `json:"cpu_quota"`
+	CgroupParent      string  `json:"cgroup_parent"`
+	CgroupnsMode      string  `json:"cgroupns_mode"`
+}
+
 // ContainerDetail is the view of GET /containers/{id}/json.
 type ContainerDetail struct {
 	ID            string
@@ -127,14 +155,18 @@ type ContainerDetail struct {
 	Networks      map[string]ContainerNetwork
 	Env           []string
 	Labels        map[string]string
+	Ports         []Port
+	Security      ContainerSecurity
+	Resources     ContainerResources
 	Raw           json.RawMessage
 }
 
 type containerInspectResponse struct {
-	ID      string `json:"Id"`
-	Name    string `json:"Name"`
-	Created string `json:"Created"`
-	State   struct {
+	ID              string `json:"Id"`
+	Name            string `json:"Name"`
+	Created         string `json:"Created"`
+	AppArmorProfile string `json:"AppArmorProfile"`
+	State           struct {
 		Status   string `json:"Status"`
 		ExitCode int    `json:"ExitCode"`
 		Health   *struct {
@@ -145,17 +177,66 @@ type containerInspectResponse struct {
 		Image  string            `json:"Image"`
 		Cmd    []string          `json:"Cmd"`
 		Env    []string          `json:"Env"`
+		User   string            `json:"User"`
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
 	HostConfig struct {
 		RestartPolicy struct {
 			Name string `json:"Name"`
 		} `json:"RestartPolicy"`
+		Privileged        bool   `json:"Privileged"`
+		ReadonlyRootfs    bool   `json:"ReadonlyRootfs"`
+		UsernsMode        string `json:"UsernsMode"`
+		CPUShares         int64  `json:"CpuShares"`
+		NanoCpus          int64  `json:"NanoCpus"`
+		Memory            int64  `json:"Memory"`
+		MemorySwap        int64  `json:"MemorySwap"`
+		MemoryReservation int64  `json:"MemoryReservation"`
+		PidsLimit         *int64 `json:"PidsLimit"`
+		OomKillDisable    bool   `json:"OomKillDisable"`
+		CPUPeriod         int64  `json:"CpuPeriod"`
+		CPUQuota          int64  `json:"CpuQuota"`
+		CgroupParent      string `json:"CgroupParent"`
+		CgroupnsMode      string `json:"CgroupnsMode"`
 	} `json:"HostConfig"`
 	Mounts          []ContainerMount `json:"Mounts"`
 	NetworkSettings struct {
 		Networks map[string]ContainerNetwork `json:"Networks"`
+		Ports    map[string][]struct {
+			HostIP   string `json:"HostIp"`
+			HostPort string `json:"HostPort"`
+		} `json:"Ports"`
 	} `json:"NetworkSettings"`
+}
+
+// portsFromInspect turns Docker's inspect NetworkSettings.Ports map (keyed
+// "containerPort/proto", each value a possibly-empty list of host bindings)
+// into the same flat Port list GET /containers/json already returns, so both
+// endpoints share one shape.
+func portsFromInspect(raw map[string][]struct {
+	HostIP   string `json:"HostIp"`
+	HostPort string `json:"HostPort"`
+}) []Port {
+	var ports []Port
+	for key, bindings := range raw {
+		privatePort, protocol, ok := strings.Cut(key, "/")
+		if !ok {
+			continue
+		}
+		private, err := strconv.ParseUint(privatePort, 10, 16)
+		if err != nil {
+			continue
+		}
+		if len(bindings) == 0 {
+			ports = append(ports, Port{PrivatePort: uint16(private), Type: protocol})
+			continue
+		}
+		for _, b := range bindings {
+			public, _ := strconv.ParseUint(b.HostPort, 10, 16)
+			ports = append(ports, Port{IP: b.HostIP, PrivatePort: uint16(private), PublicPort: uint16(public), Type: protocol})
+		}
+	}
+	return ports
 }
 
 // InspectContainer calls GET /containers/{id}/json.
@@ -181,6 +262,11 @@ func (c *Client) InspectContainer(ctx context.Context, id string) (*ContainerDet
 		health = v.State.Health.Status
 	}
 
+	var pidsLimit int64
+	if v.HostConfig.PidsLimit != nil {
+		pidsLimit = *v.HostConfig.PidsLimit
+	}
+
 	return &ContainerDetail{
 		ID:            v.ID,
 		Name:          v.Name,
@@ -196,7 +282,28 @@ func (c *Client) InspectContainer(ctx context.Context, id string) (*ContainerDet
 		Networks:      v.NetworkSettings.Networks,
 		Env:           v.Config.Env,
 		Labels:        v.Config.Labels,
-		Raw:           raw,
+		Ports:         portsFromInspect(v.NetworkSettings.Ports),
+		Security: ContainerSecurity{
+			Privileged:      v.HostConfig.Privileged,
+			ReadonlyRootfs:  v.HostConfig.ReadonlyRootfs,
+			User:            v.Config.User,
+			UsernsMode:      v.HostConfig.UsernsMode,
+			AppArmorProfile: v.AppArmorProfile,
+		},
+		Resources: ContainerResources{
+			CPUShares:         v.HostConfig.CPUShares,
+			Cpus:              float64(v.HostConfig.NanoCpus) / 1e9,
+			Memory:            v.HostConfig.Memory,
+			MemorySwap:        v.HostConfig.MemorySwap,
+			MemoryReservation: v.HostConfig.MemoryReservation,
+			PidsLimit:         pidsLimit,
+			OomKillDisable:    v.HostConfig.OomKillDisable,
+			CPUPeriod:         v.HostConfig.CPUPeriod,
+			CPUQuota:          v.HostConfig.CPUQuota,
+			CgroupParent:      v.HostConfig.CgroupParent,
+			CgroupnsMode:      v.HostConfig.CgroupnsMode,
+		},
+		Raw: raw,
 	}, nil
 }
 
