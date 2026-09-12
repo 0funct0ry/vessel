@@ -149,6 +149,11 @@ func (s *server) capabilities(role store.Role) map[string]bool {
 		delete(capabilities, "containers.files.mkdir")
 		delete(capabilities, "containers.files.delete")
 		delete(capabilities, "containers.files.rename")
+		delete(capabilities, "volumes.files.list")
+		delete(capabilities, "volumes.files.mkdir")
+		delete(capabilities, "volumes.files.delete")
+		delete(capabilities, "volumes.files.rename")
+		delete(capabilities, "volumes.clone")
 	}
 	return capabilities
 }

@@ -1,6 +1,6 @@
 import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Eye, FilePlus, FolderOpen, Pencil, PencilLine, Trash2 } from "lucide-react";
+import { Download, Eye, FilePlus, FolderOpen, FolderPlus, Pencil, PencilLine, Trash2, Upload as UploadIcon } from "lucide-react";
 import { Can } from "../../auth/Can";
 import { api, apiRoot, getToken } from "../../lib/api";
 import type { ApiRequestError, ContainerFileEntry, ContainerFileView } from "../../types/api";
@@ -36,7 +36,9 @@ function RowIconButton({ label, onClick, danger, children }: { label: string; on
   return <button type="button" title={label} aria-label={label} onClick={onClick} className={`rounded p-1 ${danger ? "text-muted hover:bg-fail/10 hover:text-fail" : "text-muted hover:bg-panel hover:text-text"}`}>{children}</button>;
 }
 
-export function FileBrowser({ containerID }: { containerID: string }) {
+export function FileBrowser({ containerID, basePath, readOnly = false, capabilityPrefix = "containers.files", resourceLabel = "the container" }: { containerID: string; basePath?: string; readOnly?: boolean; capabilityPrefix?: string; resourceLabel?: string }) {
+  const base = basePath ?? `/containers/${encodeURIComponent(containerID)}`;
+  const cap = (suffix: string) => `${capabilityPrefix}.${suffix}`;
   const { push } = useToast(); const client = useQueryClient(); const picker = useRef<HTMLInputElement>(null);
   const [dir, setDir] = useState("/"); const [busy, setBusy] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false); const [folderName, setFolderName] = useState("");
@@ -47,10 +49,10 @@ export function FileBrowser({ containerID }: { containerID: string }) {
   const [viewer, setViewer] = useState<{ entry: ContainerFileEntry; mode: "view" | "edit" } | null>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
 
-  const listing = useQuery({ queryKey: ["container-files", containerID, dir], queryFn: () => api.get<ContainerFileEntry[]>(`/containers/${encodeURIComponent(containerID)}/files?path=${encodeURIComponent(dir)}`) });
+  const listing = useQuery({ queryKey: ["container-files", containerID, dir], queryFn: () => api.get<ContainerFileEntry[]>(`${base}/files?path=${encodeURIComponent(dir)}`) });
   const fileView = useQuery({
     queryKey: ["container-file-view", containerID, viewer?.entry.path],
-    queryFn: () => api.get<ContainerFileView>(`/containers/${encodeURIComponent(containerID)}/files/view?path=${encodeURIComponent(viewer!.entry.path)}`),
+    queryFn: () => api.get<ContainerFileView>(`${base}/files/view?path=${encodeURIComponent(viewer!.entry.path)}`),
     enabled: viewer != null,
   });
   const refresh = () => client.invalidateQueries({ queryKey: ["container-files", containerID] });
@@ -63,7 +65,7 @@ export function FileBrowser({ containerID }: { containerID: string }) {
     setBusy(true);
     const form = new FormData(); form.set("path", dir); files.forEach(file => form.append("files", file));
     try {
-      await api.upload(`/containers/${encodeURIComponent(containerID)}/files`, form);
+      await api.upload(`${base}/files`, form);
       push(`${files.length} file${files.length === 1 ? "" : "s"} uploaded to ${dir}.`);
       await refresh(); setUploadOpen(false); setFiles([]);
     } catch (e) { push(`Could not upload: ${e instanceof Error ? e.message : "try again"}.`, "error"); } finally { setBusy(false); }
@@ -73,7 +75,7 @@ export function FileBrowser({ containerID }: { containerID: string }) {
     const name = folderName.trim(); if (!name) return;
     setBusy(true); const target = `${dir.replace(/\/$/, "")}/${name}`;
     try {
-      await api.post(`/containers/${encodeURIComponent(containerID)}/folders`, { path: target });
+      await api.post(`${base}/folders`, { path: target });
       push(`Created ${target}.`); setFolderOpen(false); setFolderName(""); await refresh();
     } catch (e) { push(`Could not create folder: ${e instanceof Error ? e.message : "try again"}.`, "error"); } finally { setBusy(false); }
   }
@@ -82,7 +84,7 @@ export function FileBrowser({ containerID }: { containerID: string }) {
     const name = newFileName.trim(); if (!name) return;
     setBusy(true); const target = `${dir.replace(/\/$/, "")}/${name}`;
     try {
-      await api.put(`/containers/${encodeURIComponent(containerID)}/files/content`, { path: target, content: "" });
+      await api.put(`${base}/files/content`, { path: target, content: "" });
       push(`Created ${target}.`); setNewFileOpen(false); setNewFileName(""); await refresh();
       setViewer({ entry: { name, path: target, type: "file", size: 0, mode: "", modified_at: new Date().toISOString() }, mode: "edit" });
     } catch (e) { push(`Could not create ${target}: ${e instanceof Error ? e.message : "try again"}.`, "error"); } finally { setBusy(false); }
@@ -93,7 +95,7 @@ export function FileBrowser({ containerID }: { containerID: string }) {
     const name = renameValue.trim(); if (!name || name === renameTarget.name) { setRenameTarget(null); return; }
     setBusy(true);
     try {
-      await api.post(`/containers/${encodeURIComponent(containerID)}/files/rename`, { path: renameTarget.path, name });
+      await api.post(`${base}/files/rename`, { path: renameTarget.path, name });
       push(`Renamed to ${name}.`); setRenameTarget(null); await refresh();
     } catch (e) { push(`Could not rename ${renameTarget.name}: ${e instanceof Error ? e.message : "try again"}.`, "error"); } finally { setBusy(false); }
   }
@@ -102,7 +104,7 @@ export function FileBrowser({ containerID }: { containerID: string }) {
     if (!deleteTarget) return;
     setBusy(true);
     try {
-      await api.delete(`/containers/${encodeURIComponent(containerID)}/files?path=${encodeURIComponent(deleteTarget.path)}`);
+      await api.delete(`${base}/files?path=${encodeURIComponent(deleteTarget.path)}`);
       push(`Deleted ${deleteTarget.name}.`); setDeleteTarget(null); await refresh();
     } catch (e) { push(`Could not delete ${deleteTarget.name}: ${e instanceof Error ? e.message : "try again"}.`, "error"); } finally { setBusy(false); }
   }
@@ -110,7 +112,7 @@ export function FileBrowser({ containerID }: { containerID: string }) {
   async function download(entry: ContainerFileEntry) {
     try {
       const headers = new Headers(); const token = getToken(); if (token) headers.set("Authorization", `Bearer ${token}`);
-      const res = await fetch(`${apiRoot()}/containers/${encodeURIComponent(containerID)}/files/download?path=${encodeURIComponent(entry.path)}`, { headers });
+      const res = await fetch(`${apiRoot()}${base}/files/download?path=${encodeURIComponent(entry.path)}`, { headers });
       if (!res.ok) throw new Error(res.statusText);
       const href = URL.createObjectURL(await res.blob()); const a = document.createElement("a"); a.href = href; a.download = `${entry.name}.tar`; a.click(); URL.revokeObjectURL(href);
     } catch (e) { push(`Could not download ${entry.name}: ${e instanceof Error ? e.message : "try again"}.`, "error"); }
@@ -121,7 +123,7 @@ export function FileBrowser({ containerID }: { containerID: string }) {
     const content = editRef.current?.value ?? "";
     setBusy(true);
     try {
-      await api.put(`/containers/${encodeURIComponent(containerID)}/files/content`, { path: viewer.entry.path, content });
+      await api.put(`${base}/files/content`, { path: viewer.entry.path, content });
       push(`Saved ${viewer.entry.name}.`); setViewer(null); await refresh();
     } catch (e) { push(`Could not save ${viewer.entry.name}: ${e instanceof Error ? e.message : "try again"}.`, "error"); } finally { setBusy(false); }
   }
@@ -149,9 +151,9 @@ export function FileBrowser({ containerID }: { containerID: string }) {
         </span>
       ))}
       <span className="flex-1" />
-      <Can do="containers.files.mkdir"><Button disabled={busy} onClick={() => setFolderOpen(true)}>New folder</Button></Can>
-      <Can do="containers.files.edit"><Button disabled={busy} onClick={() => setNewFileOpen(true)}>New file</Button></Can>
-      <Can do="containers.files.upload"><Button variant="primary" disabled={busy} onClick={() => setUploadOpen(true)}>Upload</Button></Can>
+      {!readOnly && <Can do={cap("mkdir")}><Button title="New folder" aria-label="New folder" disabled={busy} onClick={() => setFolderOpen(true)} className="px-2"><FolderPlus size={15} /></Button></Can>}
+      {!readOnly && <Can do={cap("edit")}><Button title="New file" aria-label="New file" disabled={busy} onClick={() => setNewFileOpen(true)} className="px-2"><FilePlus size={15} /></Button></Can>}
+      {!readOnly && <Can do={cap("upload")}><Button title="Upload" aria-label="Upload" variant="primary" disabled={busy} onClick={() => setUploadOpen(true)} className="px-2"><UploadIcon size={15} /></Button></Can>}
     </div>
 
     <div className="overflow-x-auto rounded border border-line bg-panel">
@@ -190,11 +192,11 @@ export function FileBrowser({ containerID }: { containerID: string }) {
                   <td className="px-3 text-right">
                     <span className="invisible flex items-center justify-end gap-0.5 group-hover:visible group-focus-within:visible">
                       {entry.type === "dir" && <RowIconButton label="Open" onClick={() => setDir(entry.path)}><FolderOpen size={15} /></RowIconButton>}
-                      {kind && <RowIconButton label="View" onClick={() => openViewer(entry, "view")}><Eye size={15} /></RowIconButton>}
-                      {kind === "text" && <Can do="containers.files.edit"><RowIconButton label="Edit" onClick={() => openViewer(entry, "edit")}><PencilLine size={15} /></RowIconButton></Can>}
-                      {entry.type !== "dir" && <Can do="containers.files.download"><RowIconButton label="Download" onClick={() => void download(entry)}><Download size={15} /></RowIconButton></Can>}
-                      {entry.type === "dir" && <Can do="containers.files.rename"><RowIconButton label="Rename" onClick={() => { setRenameValue(entry.name); setRenameTarget(entry); }}><Pencil size={15} /></RowIconButton></Can>}
-                      <Can do="containers.files.delete"><RowIconButton label="Delete" danger onClick={() => setDeleteTarget(entry)}><Trash2 size={15} /></RowIconButton></Can>
+                      {!readOnly && kind && <RowIconButton label="View" onClick={() => openViewer(entry, "view")}><Eye size={15} /></RowIconButton>}
+                      {!readOnly && kind === "text" && <Can do={cap("edit")}><RowIconButton label="Edit" onClick={() => openViewer(entry, "edit")}><PencilLine size={15} /></RowIconButton></Can>}
+                      {entry.type !== "dir" && <Can do={cap("download")}><RowIconButton label="Download" onClick={() => void download(entry)}><Download size={15} /></RowIconButton></Can>}
+                      {!readOnly && entry.type === "dir" && <Can do={cap("rename")}><RowIconButton label="Rename" onClick={() => { setRenameValue(entry.name); setRenameTarget(entry); }}><Pencil size={15} /></RowIconButton></Can>}
+                      {!readOnly && <Can do={cap("delete")}><RowIconButton label="Delete" danger onClick={() => setDeleteTarget(entry)}><Trash2 size={15} /></RowIconButton></Can>}
                     </span>
                   </td>
                 </tr>
@@ -204,7 +206,7 @@ export function FileBrowser({ containerID }: { containerID: string }) {
         </table>
       )}
     </div>
-    <p className="mt-2 text-[12px] text-muted">Directory listing, “New folder” and rename/delete use the container’s shell (<span className="font-mono">exec</span>) — these are unavailable when <span className="font-mono">--allow-exec=false</span>. Upload, download, view and edit do not depend on exec and stay available.</p>
+    <p className="mt-2 text-[12px] text-muted">Directory listing, “New folder” and rename/delete use {resourceLabel}’s shell (<span className="font-mono">exec</span>) — these are unavailable when <span className="font-mono">--allow-exec=false</span>. Upload, download, view and edit do not depend on exec and stay available.</p>
 
     {folderOpen && (
       <Dialog title="New folder" close={() => { if (!busy) { setFolderOpen(false); setFolderName(""); } }}>

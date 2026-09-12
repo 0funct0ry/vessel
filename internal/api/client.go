@@ -41,6 +41,8 @@ type DockerClient interface {
 	RemoveImage(context.Context, string, dockerapi.RemoveImageOptions) error
 	CreateVolume(context.Context, dockerapi.CreateVolumeOptions) (*dockerapi.Volume, error)
 	RemoveVolume(context.Context, string, bool) error
+	WithVolumeMount(context.Context, string, func(string) error) error
+	CloneVolume(context.Context, string, string) error
 	CreateNetwork(context.Context, dockerapi.CreateNetworkOptions) (*dockerapi.Network, error)
 	RemoveNetwork(context.Context, string) error
 	NetworkConnect(context.Context, string, string, bool) error

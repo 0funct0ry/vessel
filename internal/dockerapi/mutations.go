@@ -121,15 +121,17 @@ func (c *Client) RemoveImage(ctx context.Context, id string, opts RemoveImageOpt
 
 type CreateVolumeOptions struct {
 	Name, Driver string
+	DriverOpts   map[string]string
 	Labels       map[string]string
 }
 
 func (c *Client) CreateVolume(ctx context.Context, opts CreateVolumeOptions) (*Volume, error) {
 	body, err := json.Marshal(struct {
-		Name   string            `json:"Name"`
-		Driver string            `json:"Driver,omitempty"`
-		Labels map[string]string `json:"Labels,omitempty"`
-	}{opts.Name, opts.Driver, opts.Labels})
+		Name       string            `json:"Name"`
+		Driver     string            `json:"Driver,omitempty"`
+		DriverOpts map[string]string `json:"DriverOpts,omitempty"`
+		Labels     map[string]string `json:"Labels,omitempty"`
+	}{opts.Name, opts.Driver, opts.DriverOpts, opts.Labels})
 	if err != nil {
 		return nil, fmt.Errorf("dockerapi: encoding volume: %w", err)
 	}

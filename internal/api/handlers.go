@@ -984,11 +984,24 @@ func (s *server) handleImageRemove(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// validKeyedMap rejects an empty key in a labels/driver-opts style map —
+// Docker silently accepts one but it can never be looked back up, so Vessel
+// rejects it up front instead of creating an unreachable entry.
+func validKeyedMap(field string, values map[string]string) error {
+	for key := range values {
+		if strings.TrimSpace(key) == "" {
+			return invalidInput("%s keys must not be empty", field)
+		}
+	}
+	return nil
+}
+
 func (s *server) handleVolumeCreate(c *gin.Context) {
 	var body struct {
-		Name   string            `json:"name"`
-		Driver string            `json:"driver"`
-		Labels map[string]string `json:"labels"`
+		Name       string            `json:"name"`
+		Driver     string            `json:"driver"`
+		DriverOpts map[string]string `json:"driver_opts"`
+		Labels     map[string]string `json:"labels"`
 	}
 	if err := decodeBody(c, &body); err != nil {
 		Fail(c, err)
@@ -998,7 +1011,15 @@ func (s *server) handleVolumeCreate(c *gin.Context) {
 		Fail(c, err)
 		return
 	}
-	volume, err := s.docker.CreateVolume(c.Request.Context(), dockerapi.CreateVolumeOptions{Name: body.Name, Driver: body.Driver, Labels: body.Labels})
+	if err := validKeyedMap("driver_opts", body.DriverOpts); err != nil {
+		Fail(c, err)
+		return
+	}
+	if err := validKeyedMap("labels", body.Labels); err != nil {
+		Fail(c, err)
+		return
+	}
+	volume, err := s.docker.CreateVolume(c.Request.Context(), dockerapi.CreateVolumeOptions{Name: body.Name, Driver: body.Driver, DriverOpts: body.DriverOpts, Labels: body.Labels})
 	if err != nil {
 		Fail(c, err)
 		return
@@ -1017,6 +1038,352 @@ func (s *server) handleVolumeRemove(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (s *server) handleVolumeFiles(c *gin.Context) {
+	name := c.Param("name")
+	dir, err := safeContainerPath(c.Query("path"))
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	var entries []dockerapi.FileEntry
+	err = s.docker.WithVolumeMount(c.Request.Context(), name, func(containerID string) error {
+		var listErr error
+		entries, listErr = s.docker.ListDirectory(c.Request.Context(), containerID, path.Join("/vessel-volume", dir))
+		return listErr
+	})
+	if err != nil {
+		Fail(c, forResource("volume", name, err))
+		return
+	}
+	// Entries come back with paths rooted at the helper container's mount
+	// point (e.g. /vessel-volume/reports); the client works in paths
+	// relative to the volume itself, so strip that internal prefix before
+	// it round-trips back as a delete/rename/view/download/navigation
+	// target — otherwise every subsequent request would double it up
+	// (/vessel-volume/vessel-volume/...) and silently miss the real file.
+	for i, entry := range entries {
+		entries[i].Path = volumeRelativePath(entry.Path)
+	}
+	c.JSON(http.StatusOK, entries)
+}
+
+// volumeRelativePath strips the /vessel-volume mount prefix WithVolumeMount
+// uses internally, so paths handed back to the client are relative to the
+// volume root — the same shape safeContainerPath/path.Join("/vessel-volume", ...)
+// expects on the way back in.
+func volumeRelativePath(p string) string {
+	rel := strings.TrimPrefix(p, "/vessel-volume")
+	if rel == "" {
+		return "/"
+	}
+	return rel
+}
+
+func (s *server) handleVolumeDownload(c *gin.Context) {
+	name := c.Param("name")
+	filePath, err := safeContainerPath(c.Query("path"))
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	var archive io.ReadCloser
+	err = s.docker.WithVolumeMount(c.Request.Context(), name, func(containerID string) error {
+		var mountErr error
+		archive, mountErr = s.docker.DownloadPath(c.Request.Context(), containerID, path.Join("/vessel-volume", filePath))
+		return mountErr
+	})
+	if err != nil {
+		Fail(c, forResource("volume", name, err))
+		return
+	}
+	defer archive.Close()
+	base := path.Base(strings.TrimSuffix(filePath, "/"))
+	if base == "." || base == "/" {
+		base = "volume-files"
+	}
+	c.Header("Content-Type", "application/x-tar")
+	c.Header("Content-Disposition", `attachment; filename="`+base+`.tar"`)
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, archive)
+}
+
+func (s *server) handleVolumeUpload(c *gin.Context) {
+	name := c.Param("name")
+	if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+		Fail(c, invalidInput("invalid multipart upload"))
+		return
+	}
+	dir, err := safeContainerPath(c.Request.FormValue("path"))
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	headers := c.Request.MultipartForm.File["files"]
+	if len(headers) == 0 {
+		Fail(c, invalidInput("at least one file is required"))
+		return
+	}
+	tmp, err := os.CreateTemp("", "vessel-volume-files-*.tar")
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	tw := tar.NewWriter(tmp)
+	for _, header := range headers {
+		file, openErr := header.Open()
+		if openErr != nil {
+			tw.Close()
+			tmp.Close()
+			Fail(c, openErr)
+			return
+		}
+		fileName := path.Base(header.Filename)
+		if fileName == "." || fileName == "/" {
+			file.Close()
+			tw.Close()
+			tmp.Close()
+			Fail(c, invalidPath("upload file name is invalid"))
+			return
+		}
+		writeErr := tw.WriteHeader(&tar.Header{Name: fileName, Mode: 0644, Size: header.Size})
+		if writeErr == nil {
+			_, writeErr = io.Copy(tw, file)
+		}
+		file.Close()
+		if writeErr != nil {
+			tw.Close()
+			tmp.Close()
+			Fail(c, writeErr)
+			return
+		}
+	}
+	if err := tw.Close(); err != nil {
+		tmp.Close()
+		Fail(c, err)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		Fail(c, err)
+		return
+	}
+	err = s.docker.WithVolumeMount(c.Request.Context(), name, func(containerID string) error {
+		archive, openErr := os.Open(tmpPath)
+		if openErr != nil {
+			return openErr
+		}
+		defer archive.Close()
+		return s.docker.UploadFiles(c.Request.Context(), containerID, path.Join("/vessel-volume", dir), archive)
+	})
+	if err != nil {
+		Fail(c, forResource("volume", name, err))
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (s *server) handleVolumeFolder(c *gin.Context) {
+	name := c.Param("name")
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := decodeBody(c, &body); err != nil {
+		Fail(c, err)
+		return
+	}
+	if strings.TrimSpace(body.Path) == "" {
+		Fail(c, invalidInput("path is required"))
+		return
+	}
+	dir, err := safeContainerPath(body.Path)
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	err = s.docker.WithVolumeMount(c.Request.Context(), name, func(containerID string) error {
+		return s.docker.CreateDirectory(c.Request.Context(), containerID, path.Join("/vessel-volume", dir))
+	})
+	if err != nil {
+		Fail(c, forResource("volume", name, err))
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (s *server) handleVolumeFileDelete(c *gin.Context) {
+	name := c.Param("name")
+	target, err := safeContainerPath(c.Query("path"))
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	if target == "" || target == "/" {
+		Fail(c, invalidPath("path is required"))
+		return
+	}
+	err = s.docker.WithVolumeMount(c.Request.Context(), name, func(containerID string) error {
+		return s.docker.RemovePath(c.Request.Context(), containerID, path.Join("/vessel-volume", target))
+	})
+	if err != nil {
+		Fail(c, forResource("volume", name, err))
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (s *server) handleVolumeFileRename(c *gin.Context) {
+	name := c.Param("name")
+	var body struct {
+		Path string `json:"path"`
+		Name string `json:"name"`
+	}
+	if err := decodeBody(c, &body); err != nil {
+		Fail(c, err)
+		return
+	}
+	if strings.TrimSpace(body.Path) == "" {
+		Fail(c, invalidInput("path is required"))
+		return
+	}
+	if strings.TrimSpace(body.Name) == "" || strings.ContainsRune(body.Name, '/') {
+		Fail(c, invalidInput("name must be a single path segment"))
+		return
+	}
+	from, err := safeContainerPath(body.Path)
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	if from == "" || from == "/" {
+		Fail(c, invalidPath("path is required"))
+		return
+	}
+	to := path.Join(path.Dir(from), body.Name)
+	err = s.docker.WithVolumeMount(c.Request.Context(), name, func(containerID string) error {
+		return s.docker.RenamePath(c.Request.Context(), containerID, path.Join("/vessel-volume", from), path.Join("/vessel-volume", to))
+	})
+	if err != nil {
+		Fail(c, forResource("volume", name, err))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"path": to})
+}
+
+func (s *server) handleVolumeFileView(c *gin.Context) {
+	name := c.Param("name")
+	target, err := safeContainerPath(c.Query("path"))
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	if target == "" || target == "/" {
+		Fail(c, invalidPath("path is required"))
+		return
+	}
+	var fileName string
+	var data []byte
+	err = s.docker.WithVolumeMount(c.Request.Context(), name, func(containerID string) error {
+		var readErr error
+		fileName, data, readErr = s.docker.ReadFile(c.Request.Context(), containerID, path.Join("/vessel-volume", target))
+		return readErr
+	})
+	if err != nil {
+		Fail(c, forResource("volume", name, err))
+		return
+	}
+	if len(data) > maxFileViewBytes {
+		Fail(c, invalidInput("file exceeds %d bytes and cannot be previewed", maxFileViewBytes))
+		return
+	}
+	kind, mimeType := classifyFileContent(data)
+	response := gin.H{"name": fileName, "size": len(data), "mime": mimeType, "kind": kind}
+	switch kind {
+	case "text":
+		response["content"] = string(data)
+	case "image":
+		response["content"] = base64.StdEncoding.EncodeToString(data)
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+func (s *server) handleVolumeFileWrite(c *gin.Context) {
+	name := c.Param("name")
+	var body struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := decodeBody(c, &body); err != nil {
+		Fail(c, err)
+		return
+	}
+	if strings.TrimSpace(body.Path) == "" {
+		Fail(c, invalidInput("path is required"))
+		return
+	}
+	target, err := safeContainerPath(body.Path)
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	if target == "" || target == "/" {
+		Fail(c, invalidPath("path is required"))
+		return
+	}
+	err = s.docker.WithVolumeMount(c.Request.Context(), name, func(containerID string) error {
+		return s.docker.WriteFile(c.Request.Context(), containerID, path.Join("/vessel-volume", target), []byte(body.Content))
+	})
+	if err != nil {
+		Fail(c, forResource("volume", name, err))
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (s *server) handleVolumeExport(c *gin.Context) {
+	name := c.Param("name")
+	var archive io.ReadCloser
+	err := s.docker.WithVolumeMount(c.Request.Context(), name, func(containerID string) error {
+		var mountErr error
+		archive, mountErr = s.docker.DownloadPath(c.Request.Context(), containerID, "/vessel-volume")
+		return mountErr
+	})
+	if err != nil {
+		Fail(c, forResource("volume", name, err))
+		return
+	}
+	defer archive.Close()
+	c.Header("Content-Type", "application/x-tar")
+	c.Header("Content-Disposition", `attachment; filename="`+name+`.tar"`)
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, archive)
+}
+
+func (s *server) handleVolumeClone(c *gin.Context) {
+	source := c.Param("name")
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := decodeBody(c, &body); err != nil {
+		Fail(c, err)
+		return
+	}
+	if err := validResourceName(body.Name); err != nil {
+		Fail(c, err)
+		return
+	}
+	if err := s.docker.CloneVolume(c.Request.Context(), source, body.Name); err != nil {
+		Fail(c, forResource("volume", source, err))
+		return
+	}
+	volume, err := s.docker.InspectVolume(c.Request.Context(), body.Name)
+	if err != nil {
+		Fail(c, forResource("volume", body.Name, err))
+		return
+	}
+	c.JSON(http.StatusCreated, volumeToView(*volume, nil, nil, true))
 }
 
 func (s *server) handleNetworkCreate(c *gin.Context) {

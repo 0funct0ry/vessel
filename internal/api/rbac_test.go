@@ -60,6 +60,16 @@ var protectedRoutes = []protectedRoute{
 	{http.MethodPost, "/api/v1/volumes", `{"name":"data"}`, store.RoleOperator},
 	{http.MethodGet, "/api/v1/volumes/data", "", store.RoleViewer},
 	{http.MethodDelete, "/api/v1/volumes/data", "", store.RoleOperator},
+	{http.MethodGet, "/api/v1/volumes/data/files", "", store.RoleOperator},
+	{http.MethodPost, "/api/v1/volumes/data/files", "", store.RoleOperator},
+	{http.MethodPost, "/api/v1/volumes/data/folders", `{"path":"/tmp/x"}`, store.RoleOperator},
+	{http.MethodGet, "/api/v1/volumes/data/files/download", "", store.RoleOperator},
+	{http.MethodDelete, "/api/v1/volumes/data/files", "", store.RoleOperator},
+	{http.MethodPost, "/api/v1/volumes/data/files/rename", `{"path":"/tmp/a","name":"b"}`, store.RoleOperator},
+	{http.MethodGet, "/api/v1/volumes/data/files/view", "", store.RoleOperator},
+	{http.MethodPut, "/api/v1/volumes/data/files/content", `{"path":"/tmp/a","content":""}`, store.RoleOperator},
+	{http.MethodGet, "/api/v1/volumes/data/export", "", store.RoleViewer},
+	{http.MethodPost, "/api/v1/volumes/data/clone", `{"name":"data-copy"}`, store.RoleOperator},
 	{http.MethodGet, "/api/v1/networks", "", store.RoleViewer},
 	{http.MethodPost, "/api/v1/networks", `{"name":"edge"}`, store.RoleOperator},
 	{http.MethodGet, "/api/v1/networks/n1", "", store.RoleViewer},
@@ -163,12 +173,12 @@ func TestMeCapabilitiesExecOffAsymmetry(t *testing.T) {
 	body := response.Body.String()
 	// Exec-gated capabilities are removed from the map entirely (see
 	// server.capabilities), not set to false, so assert their key is absent.
-	for _, capability := range []string{"containers.files.list", "containers.files.mkdir", "containers.files.delete", "containers.files.rename"} {
+	for _, capability := range []string{"containers.files.list", "containers.files.mkdir", "containers.files.delete", "containers.files.rename", "volumes.files.list", "volumes.files.mkdir", "volumes.files.delete", "volumes.files.rename", "volumes.clone"} {
 		if strings.Contains(body, `"`+capability+`"`) {
 			t.Fatalf("capability %q present with exec off, want absent: %s", capability, body)
 		}
 	}
-	for _, capability := range []string{"containers.files.upload", "containers.files.download", "containers.files.view", "containers.files.edit"} {
+	for _, capability := range []string{"containers.files.upload", "containers.files.download", "containers.files.view", "containers.files.edit", "volumes.files.upload", "volumes.files.download", "volumes.files.view", "volumes.files.edit", "volumes.export"} {
 		if !strings.Contains(body, `"`+capability+`":true`) {
 			t.Fatalf("capability %q missing/false with exec off, want true: %s", capability, body)
 		}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -206,6 +207,13 @@ func (f *fakeDockerClient) CreateVolume(context.Context, dockerapi.CreateVolumeO
 	return f.volume, f.err
 }
 func (f *fakeDockerClient) RemoveVolume(context.Context, string, bool) error { return f.err }
+func (f *fakeDockerClient) WithVolumeMount(_ context.Context, _ string, fn func(string) error) error {
+	if f.err != nil {
+		return f.err
+	}
+	return fn("mount-helper")
+}
+func (f *fakeDockerClient) CloneVolume(context.Context, string, string) error { return f.err }
 func (f *fakeDockerClient) CreateNetwork(context.Context, dockerapi.CreateNetworkOptions) (*dockerapi.Network, error) {
 	return f.network, f.err
 }
@@ -257,6 +265,14 @@ func (f *fakeDockerClient) WriteFile(_ context.Context, _ string, path string, d
 func performRequest(router http.Handler, method, target string) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(method, target, nil)
+	router.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func performRequestBody(router http.Handler, method, target, body string) *httptest.ResponseRecorder {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(method, target, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(recorder, request)
 	return recorder
 }
@@ -392,6 +408,160 @@ func TestVolumeSizeOmittedWhenUsageUnknown(t *testing.T) {
 	response := performRequest(NewRouter(Config{Docker: fake}), http.MethodGet, "/api/v1/volumes")
 	if response.Code != http.StatusOK || bytes.Contains(response.Body.Bytes(), []byte(`size_bytes`)) {
 		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestVolumeCreateRejectsEmptyDriverOptKey(t *testing.T) {
+	fake := newFakeDockerClient()
+	router := NewRouter(Config{Docker: fake})
+	response := performRequestBody(router, http.MethodPost, "/api/v1/volumes", `{"name":"data","driver":"nfs","driver_opts":{"":"type=nfs"}}`)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", response.Code, response.Body.String())
+	}
+	if !bytes.Contains(response.Body.Bytes(), []byte("invalid_request")) {
+		t.Fatalf("body = %s, want invalid_request", response.Body.String())
+	}
+}
+
+func TestVolumeFilesDownloadExportAndClone(t *testing.T) {
+	fake := newFakeDockerClient()
+	fake.files = []dockerapi.FileEntry{{Name: "a.txt", Path: "/vessel-volume/a.txt", Type: "file", Size: 3}}
+	fake.download = io.NopCloser(strings.NewReader("tar-bytes"))
+	fake.volume = &dockerapi.Volume{Name: "data-copy", Driver: "local"}
+	router := NewRouter(Config{Docker: fake, AllowExec: true})
+
+	response := performRequest(router, http.MethodGet, "/api/v1/volumes/data/files")
+	if response.Code != http.StatusOK {
+		t.Fatalf("files status = %d: %s", response.Code, response.Body.String())
+	}
+	assertJSON(t, response.Body.String(), `[{"name":"a.txt","path":"/a.txt","type":"file","size":3,"mode":"","modified_at":"0001-01-01T00:00:00Z"}]`)
+
+	response = performRequest(router, http.MethodGet, "/api/v1/volumes/data/files/download?path=/a.txt")
+	if response.Code != http.StatusOK || response.Body.String() != "tar-bytes" {
+		t.Fatalf("download = %d %s", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Content-Disposition"); got != `attachment; filename="a.txt.tar"` {
+		t.Fatalf("content-disposition = %q", got)
+	}
+
+	fake.download = io.NopCloser(strings.NewReader("full-tar"))
+	response = performRequest(router, http.MethodGet, "/api/v1/volumes/data/export")
+	if response.Code != http.StatusOK || response.Body.String() != "full-tar" {
+		t.Fatalf("export = %d %s", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Content-Disposition"); got != `attachment; filename="data.tar"` {
+		t.Fatalf("content-disposition = %q", got)
+	}
+
+	response = performRequestBody(router, http.MethodPost, "/api/v1/volumes/data/clone", `{"name":"data-copy"}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("clone status = %d: %s", response.Code, response.Body.String())
+	}
+}
+
+// TestVolumeFilesListedPathDeletesCorrectly guards against a regression where
+// handleVolumeFiles returned entries with the internal /vessel-volume mount
+// prefix still attached; a client then round-tripping that path back into
+// delete/rename/download/navigate calls would have it prefixed a second time
+// (/vessel-volume/vessel-volume/...), so the real file was never touched even
+// though the request succeeded — a silent no-op, not an error.
+func TestVolumeFilesListedPathDeletesCorrectly(t *testing.T) {
+	fake := newFakeDockerClient()
+	fake.files = []dockerapi.FileEntry{{Name: "vessel.md", Path: "/vessel-volume/vessel.md", Type: "file", Size: 5}}
+	router := NewRouter(Config{Docker: fake, AllowExec: true})
+
+	response := performRequest(router, http.MethodGet, "/api/v1/volumes/data/files")
+	if response.Code != http.StatusOK {
+		t.Fatalf("files status = %d: %s", response.Code, response.Body.String())
+	}
+	var entries []dockerapi.FileEntry
+	if err := json.Unmarshal(response.Body.Bytes(), &entries); err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Path != "/vessel.md" {
+		t.Fatalf("entries = %+v, want a single entry with the volume-relative path /vessel.md", entries)
+	}
+
+	response = performRequest(router, http.MethodDelete, "/api/v1/volumes/data/files?path="+url.QueryEscape(entries[0].Path))
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d: %s", response.Code, response.Body.String())
+	}
+	if len(fake.removeCalls) != 1 || fake.removeCalls[0] != "/vessel-volume/vessel.md" {
+		t.Fatalf("removeCalls = %v, want exactly one call at /vessel-volume/vessel.md (not doubled)", fake.removeCalls)
+	}
+}
+
+func TestVolumeFilesRequiresExec(t *testing.T) {
+	fake := newFakeDockerClient()
+	router := NewRouter(Config{Docker: fake, AllowExec: false})
+	response := performRequest(router, http.MethodGet, "/api/v1/volumes/data/files")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 route not registered: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestVolumeFilesWriteActions(t *testing.T) {
+	fake := newFakeDockerClient()
+	router := NewRouter(Config{Docker: fake, AllowExec: true})
+
+	var form bytes.Buffer
+	writer := multipart.NewWriter(&form)
+	if err := writer.WriteField("path", "/"); err != nil {
+		t.Fatal(err)
+	}
+	part, err := writer.CreateFormFile("files", "note.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("hi")); err != nil {
+		t.Fatal(err)
+	}
+	writer.Close()
+	uploadReq := httptest.NewRequest(http.MethodPost, "/api/v1/volumes/data/files", &form)
+	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+	uploadRec := httptest.NewRecorder()
+	router.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusNoContent {
+		t.Fatalf("upload status = %d: %s", uploadRec.Code, uploadRec.Body.String())
+	}
+	if fake.uploadPath != "/vessel-volume" {
+		t.Fatalf("uploadPath = %q", fake.uploadPath)
+	}
+
+	response := performRequestBody(router, http.MethodPost, "/api/v1/volumes/data/folders", `{"path":"/reports"}`)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("folder status = %d: %s", response.Code, response.Body.String())
+	}
+
+	response = performRequest(router, http.MethodDelete, "/api/v1/volumes/data/files?path=/note.txt")
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d: %s", response.Code, response.Body.String())
+	}
+	if len(fake.removeCalls) != 1 || fake.removeCalls[0] != "/vessel-volume/note.txt" {
+		t.Fatalf("removeCalls = %v", fake.removeCalls)
+	}
+
+	response = performRequestBody(router, http.MethodPost, "/api/v1/volumes/data/files/rename", `{"path":"/reports","name":"archive"}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("rename status = %d: %s", response.Code, response.Body.String())
+	}
+	if len(fake.renameCalls) != 1 || fake.renameCalls[0] != [2]string{"/vessel-volume/reports", "/vessel-volume/archive"} {
+		t.Fatalf("renameCalls = %v", fake.renameCalls)
+	}
+
+	fake.readFileName = "note.txt"
+	fake.readFileData = []byte("hello")
+	response = performRequest(router, http.MethodGet, "/api/v1/volumes/data/files/view?path=/note.txt")
+	if response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"content":"hello"`)) {
+		t.Fatalf("view = %d %s", response.Code, response.Body.String())
+	}
+
+	response = performRequestBody(router, http.MethodPut, "/api/v1/volumes/data/files/content", `{"path":"/note.txt","content":"updated"}`)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("write status = %d: %s", response.Code, response.Body.String())
+	}
+	if fake.writeFilePath != "/vessel-volume/note.txt" || string(fake.writeFileData) != "updated" {
+		t.Fatalf("writeFilePath=%q writeFileData=%q", fake.writeFilePath, fake.writeFileData)
 	}
 }
 

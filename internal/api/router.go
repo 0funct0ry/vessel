@@ -116,6 +116,18 @@ func NewRouter(cfg Config) *gin.Engine {
 	v1.POST("/volumes", s.handleVolumeCreate)
 	v1.GET("/volumes/:name", s.handleVolume)
 	v1.DELETE("/volumes/:name", s.handleVolumeRemove)
+	if s.execOn {
+		v1.GET("/volumes/:name/files", s.handleVolumeFiles)
+		v1.POST("/volumes/:name/folders", s.handleVolumeFolder)
+		v1.DELETE("/volumes/:name/files", s.handleVolumeFileDelete)
+		v1.POST("/volumes/:name/files/rename", s.handleVolumeFileRename)
+		v1.POST("/volumes/:name/clone", s.handleVolumeClone)
+	}
+	v1.POST("/volumes/:name/files", s.handleVolumeUpload)
+	v1.GET("/volumes/:name/files/download", s.handleVolumeDownload)
+	v1.GET("/volumes/:name/files/view", s.handleVolumeFileView)
+	v1.PUT("/volumes/:name/files/content", s.handleVolumeFileWrite)
+	v1.GET("/volumes/:name/export", s.handleVolumeExport)
 	v1.GET("/networks", s.handleNetworks)
 	v1.POST("/networks", s.handleNetworkCreate)
 	v1.GET("/networks/:id", s.handleNetwork)
