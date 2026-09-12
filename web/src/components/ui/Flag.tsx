@@ -1,8 +1,9 @@
-export type FlagState = "running" | "paused" | "exited" | "stopped" | "created";
+export type FlagState = "running" | "paused" | "restarting" | "exited" | "stopped" | "created";
 
 const LABEL: Record<FlagState, string> = {
   running: "Running",
   paused: "Paused",
+  restarting: "Restarting",
   exited: "Exited",
   stopped: "Stopped",
   created: "Created",
@@ -22,6 +23,7 @@ export function Flag({ state, label }: { state: FlagState; label?: string }) {
           running: "inline-block h-2.5 w-2.5 bg-run",
           paused:
             "inline-block h-2.5 w-2.5 border border-pause bg-gradient-to-br from-pause from-50% to-transparent to-50%",
+          restarting: "inline-block h-2.5 w-2.5 animate-pulse bg-pause",
           exited: "inline-block h-2.5 w-2.5 bg-fail",
           stopped: "inline-block h-2.5 w-2.5 border border-stop bg-transparent",
           created: "inline-block h-2.5 w-2.5 border border-link bg-transparent",

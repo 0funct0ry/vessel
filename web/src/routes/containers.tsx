@@ -46,7 +46,7 @@ const dangerIconAction = `${iconAction} hover:bg-fail/10 hover:text-fail`;
 
 function ContainerRowActions({ container: c, onLifecycle, onEdit, onRemove }: { container: Container; onLifecycle: (c: Container, action: LifecycleAction) => void; onEdit: (c: Container) => void; onRemove: (c: Container) => void }) {
   return <span className="inline-flex items-center gap-0.5">
-    <Can do="containers.start"><button type="button" title="Start" aria-label={`Start ${c.name}`} disabled={c.state === "running"} onClick={() => onLifecycle(c, "start")} className={iconAction}><Play size={15} /></button></Can>
+    <Can do="containers.start"><button type="button" title="Start" aria-label={`Start ${c.name}`} disabled={c.state === "running" || c.state === "restarting"} onClick={() => onLifecycle(c, "start")} className={iconAction}><Play size={15} /></button></Can>
     <Can do="containers.pause">{c.state === "paused" ? <button type="button" title="Resume" aria-label={`Resume ${c.name}`} onClick={() => onLifecycle(c, "unpause")} className={iconAction}><Play size={15} /></button> : <button type="button" title={c.state !== "running" ? "Only a running container can be paused" : "Pause"} aria-label={`Pause ${c.name}`} disabled={c.state !== "running"} onClick={() => onLifecycle(c, "pause")} className={iconAction}><Pause size={15} /></button>}</Can>
     <Can do="containers.stop"><button type="button" title="Stop" aria-label={`Stop ${c.name}`} disabled={!canStop(c)} onClick={() => onLifecycle(c, "stop")} className={iconAction}><Square size={15} /></button></Can>
     <Can do="containers.restart"><button type="button" title="Restart" aria-label={`Restart ${c.name}`} onClick={() => onLifecycle(c, "restart")} className={iconAction}><RotateCw size={15} /></button></Can>

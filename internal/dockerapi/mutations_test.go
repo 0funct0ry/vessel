@@ -2,6 +2,7 @@ package dockerapi
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -81,7 +82,7 @@ func TestMutations_EngineRequests(t *testing.T) {
 	if err := c.NetworkConnect(ctx, "net1", "app", true); err != nil {
 		t.Fatal(err)
 	}
-	report, err := c.Prune(ctx, "volumes")
+	report, err := c.Prune(ctx, "volumes", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +96,45 @@ func TestMutations_EngineRequests(t *testing.T) {
 	}
 	if strings.Join(seen, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("requests:\n%s\nwant:\n%s", strings.Join(seen, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestPrune_FiltersQuery(t *testing.T) {
+	var gotQuery url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		_, _ = io.WriteString(w, `{"ImagesDeleted":[{"Deleted":"sha256:a"},{"Untagged":"acme/app:old"}],"SpaceReclaimed":5}`)
+	}))
+	defer srv.Close()
+	c, err := New("tcp://" + srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	report, err := c.Prune(ctx, "images", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Docker's real /images/prune response shapes ImagesDeleted as objects
+	// ({"Deleted": "sha256:..."} / {"Untagged": "repo:tag"}), not plain
+	// strings; decoding must pull the id out of either field.
+	if len(report.Deleted) != 2 || report.Deleted[0] != "sha256:a" || report.Deleted[1] != "acme/app:old" {
+		t.Fatalf("deleted=%v", report.Deleted)
+	}
+	if gotQuery.Get("filters") != "" {
+		t.Fatalf("expected no filters query when none given, got %q", gotQuery.Get("filters"))
+	}
+
+	if _, err := c.Prune(ctx, "images", map[string][]string{"dangling": {"false"}}); err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string][]string
+	if err := json.Unmarshal([]byte(gotQuery.Get("filters")), &decoded); err != nil {
+		t.Fatalf("decoding filters query: %v", err)
+	}
+	if len(decoded["dangling"]) != 1 || decoded["dangling"][0] != "false" {
+		t.Fatalf("filters=%v", decoded)
 	}
 }
 

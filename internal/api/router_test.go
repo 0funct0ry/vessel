@@ -46,6 +46,7 @@ type fakeDockerClient struct {
 	logs           dockerapi.LogStream
 	logCalls       []dockerapi.LogsOptions
 	prune          *dockerapi.PruneReport
+	pruneCalls     []pruneCall
 	stats          dockerapi.Stats
 	statsByID      map[string]dockerapi.Stats
 	statsStream    dockerapi.StatsStream
@@ -229,7 +230,14 @@ func (f *fakeDockerClient) CreateNetwork(context.Context, dockerapi.CreateNetwor
 }
 func (f *fakeDockerClient) RemoveNetwork(context.Context, string) error                { return f.err }
 func (f *fakeDockerClient) NetworkConnect(context.Context, string, string, bool) error { return f.err }
-func (f *fakeDockerClient) Prune(context.Context, string) (*dockerapi.PruneReport, error) {
+
+type pruneCall struct {
+	kind    string
+	filters map[string][]string
+}
+
+func (f *fakeDockerClient) Prune(_ context.Context, kind string, filters map[string][]string) (*dockerapi.PruneReport, error) {
+	f.pruneCalls = append(f.pruneCalls, pruneCall{kind: kind, filters: filters})
 	return f.prune, f.err
 }
 func (f *fakeDockerClient) CreateExec(_ context.Context, _ string, opts dockerapi.ExecOptions) (string, error) {

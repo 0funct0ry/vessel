@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Play, Tags, Trash2, X } from "lucide-react";
+import { Download, Play, Tags, Trash2, X } from "lucide-react";
 import { Can } from "../auth/Can";
 import { CreateContainerModal } from "../components/containers/CreateContainerModal";
 import { Button } from "../components/ui/Button";
@@ -338,7 +338,7 @@ function RemoveDialog({ image, close, done }: { image: Image; close: () => void;
   </div>;
 }
 
-function PruneDialog({ close, done }: { close: () => void; done: () => void }) {
+function PruneDialog({ dangling, close, done }: { dangling: boolean; close: () => void; done: () => void }) {
   const { push } = useToast();
   const [busy, setBusy] = useState(false);
   const host = useQuery({ queryKey: ["host"], queryFn: () => api.get<Host>("/host") });
@@ -346,8 +346,8 @@ function PruneDialog({ close, done }: { close: () => void; done: () => void }) {
   async function prune() {
     setBusy(true);
     try {
-      const report = await api.post<{ ImagesDeleted?: unknown[]; SpaceReclaimed?: number }>("/prune/images");
-      push(`Pruned ${report.ImagesDeleted?.length ?? 0} image(s), reclaimed ${bytes(report.SpaceReclaimed ?? 0)}.`);
+      const report = await api.post<{ deleted?: unknown[]; space_reclaimed?: number }>(`/prune/images?dangling=${dangling}`);
+      push(`Pruned ${report.deleted?.length ?? 0} image(s), reclaimed ${bytes(report.space_reclaimed ?? 0)}.`);
       done();
       close();
     } catch (e) {
@@ -357,9 +357,43 @@ function PruneDialog({ close, done }: { close: () => void; done: () => void }) {
   }
   return <div role="dialog" aria-modal="true" aria-labelledby="prune-title" className="fixed inset-0 z-40 grid place-items-center bg-ink/45 p-4">
     <div className="w-full max-w-md rounded border border-line bg-panel p-5 shadow-lg">
-      <h2 id="prune-title" className="m-0 text-lg">Prune unused images?</h2>
-      <p className="mt-2 text-[13px] text-muted">Removes every image with no container reference. Estimated reclaim: <b>{bytes(reclaimable)}</b>.</p>
+      <h2 id="prune-title" className="m-0 text-lg">Prune {dangling ? "dangling" : "unused"} images?</h2>
+      <p className="mt-2 text-[13px] text-muted">
+        {dangling ? "Removes untagged (dangling) images only." : "Removes every image with no container reference, tagged or not."} Estimated reclaim: <b>{bytes(reclaimable)}</b>.
+      </p>
       <div className="mt-5 flex justify-end gap-2"><Button onClick={close}>Cancel</Button><Button variant="danger" disabled={busy} onClick={() => void prune()}>Prune</Button></div>
+    </div>
+  </div>;
+}
+
+function ImageBulkRemoveDialog({ images, close, done }: { images: Image[]; close: () => void; done: () => void }) {
+  const { push } = useToast();
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const allowed = typed.trim().toUpperCase() === "REMOVE";
+  async function remove() {
+    setBusy(true);
+    const results: string[] = [];
+    for (const image of images) {
+      const label = image.repo_tags[0] || shortID(image.id);
+      if (image.used_by_count > 0) { results.push(`${label}: skipped (in use)`); continue; }
+      try {
+        await api.delete(`/images/${encodeURIComponent(image.id)}`);
+        results.push(`${label}: removed`);
+      } catch {
+        results.push(`${label}: failed`);
+      }
+    }
+    push(results.join(" · "));
+    done();
+    close();
+  }
+  return <div role="dialog" aria-modal="true" aria-labelledby="bulk-remove-title" className="fixed inset-0 z-40 grid place-items-center bg-ink/45 p-4">
+    <div className="w-full max-w-md rounded border border-line bg-panel p-5 shadow-lg">
+      <h2 id="bulk-remove-title" className="m-0 text-lg">Remove {images.length} images?</h2>
+      <p className="mt-2 text-[13px] text-muted">{images.map((image) => image.repo_tags[0] || shortID(image.id)).join(", ")}</p>
+      <label className="mt-3 block text-[13px]">This removes {images.length} images — type REMOVE to confirm<input autoFocus value={typed} onChange={(e) => setTyped(e.target.value)} className="mt-1 block w-full rounded border border-line px-2 py-1" /></label>
+      <div className="mt-5 flex justify-end gap-2"><Button onClick={close}>Cancel</Button><Button variant="danger" disabled={!allowed || busy} onClick={() => void remove()}>Remove</Button></div>
     </div>
   </div>;
 }
@@ -381,7 +415,8 @@ export function ImagesPage() {
   const [tag, setTag] = useState<Image | null>(null);
   const [untag, setUntag] = useState<{ image: Image; tag: string } | null>(null);
   const [remove, setRemove] = useState<Image | null>(null);
-  const [prune, setPrune] = useState(false);
+  const [bulkRemove, setBulkRemove] = useState(false);
+  const [pruneMode, setPruneMode] = useState<"dangling" | "unused" | null>(null);
   const [runImage, setRunImage] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [importOpen, setImportOpen] = useState(false);
@@ -391,14 +426,14 @@ export function ImagesPage() {
   const images = useQuery({ queryKey: ["images", q, sort], queryFn: () => api.get<Image[]>(path), refetchInterval: 5000 });
   const rows = images.data ?? [];
   const selectableRefs = Array.from(new Set(rows.flatMap((image) => (image.repo_tags.length ? image.repo_tags : [image.id]).map((tag) => tag === "<none>:<none>" ? image.id : tag))));
+  const selectedImages = rows.filter((image) => (image.repo_tags.length ? image.repo_tags : [image.id]).some((t) => selected.has(t === "<none>:<none>" ? image.id : t)));
   const refresh = () => { void queryClient.invalidateQueries({ queryKey: ["images"] }); void queryClient.invalidateQueries({ queryKey: ["host"] }); };
 
   function toggleSelection(ref: string, checked: boolean) {
     setSelected((current) => { const next = new Set(current); if (checked) next.add(ref); else next.delete(ref); return next; });
   }
   function toggleAll(checked: boolean) { setSelected(checked ? new Set(selectableRefs) : new Set()); }
-  async function exportImages() {
-    const refs = selected.size ? [...selected] : selectableRefs;
+  async function exportImages(refs: string[] = selected.size ? [...selected] : selectableRefs) {
     if (!refs.length) return;
     const params = new URLSearchParams(); refs.forEach((ref) => params.append("ref", ref));
     const base = basePath(); const token = getToken();
@@ -426,6 +461,7 @@ export function ImagesPage() {
     return <span className="flex items-center gap-2">
       <span className="font-mono">{isNone ? "<none>" : tag}</span>
       {image.dangling && <span className="rounded-sm border border-[#E3CB93] px-1 font-mono text-[11px] text-pause">dangling</span>}
+      {!isNone && <Can do="images.export"><button type="button" title={`Export ${fullTag}`} aria-label={`Export ${fullTag}`} onClick={() => void exportImages([fullTag]).catch((e: unknown) => { const message = e instanceof Error ? e.message : "export failed"; push(`Could not export ${fullTag}: ${message}`, "error"); })} className={`${iconAction} opacity-0 group-hover:opacity-100 focus-within:opacity-100`}><Download size={13} /></button></Can>}
       {!isNone && <Can do="images.tag"><button type="button" title="Remove this tag" aria-label={`Remove tag ${fullTag}`} onClick={() => setUntag({ image, tag: fullTag })} className={`${iconAction} opacity-0 group-hover:opacity-100 focus-within:opacity-100`}><X size={13} /></button></Can>}
     </span>;
   }
@@ -435,7 +471,8 @@ export function ImagesPage() {
       <input ref={filterRef} type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by repository or tag" aria-label="Filter images" className="min-w-[230px] rounded border border-line bg-panel px-2 py-1.5 text-[13px]" />
       <label className="ml-1 flex items-center gap-1.5 text-[13px]"><input type="checkbox" checked={grouped} onChange={(e) => setGrouped(e.target.checked)} /> group by image</label>
       <span className="flex-1" />
-      <Can do="prune.run"><Button onClick={() => setPrune(true)}>Prune unused</Button></Can>
+      <Can do="prune.run"><Button onClick={() => setPruneMode("dangling")}>Prune dangling</Button></Can>
+      <Can do="prune.run"><Button onClick={() => setPruneMode("unused")}>Prune unused</Button></Can>
       <Can do="images.export"><Button onClick={() => void exportImages().catch((e: unknown) => { const message = e instanceof Error ? e.message : "export failed"; push(`Could not export images: ${message}`, "error"); })}>Export selected</Button></Can>
       <Can do="images.import"><Button onClick={() => setImportOpen(true)}>Import</Button></Can>
       <Can do="images.build"><Button onClick={() => setBuildOpen(true)}>Build image</Button></Can>
@@ -443,7 +480,7 @@ export function ImagesPage() {
     </div>
     {importOpen && <ImportModal close={() => setImportOpen(false)} done={refresh} />}
     {buildOpen && <BuildModal close={() => setBuildOpen(false)} done={refresh} />}
-    {selected.size > 0 && <div className="mb-2 flex items-center gap-2.5 rounded bg-hull px-3 py-2 text-[13px] text-white"><span>{selected.size} selected</span><span className="flex-1" /><Button className="border-white/35 bg-transparent text-white hover:bg-white/10" onClick={() => setSelected(new Set())}>Clear</Button></div>}
+    {selected.size > 0 && <div className="mb-2 flex items-center gap-2.5 rounded bg-hull px-3 py-2 text-[13px] text-white"><span>{selected.size} selected</span><span className="flex-1" /><Can do="images.remove"><Button className="border-white/35 bg-transparent text-white hover:bg-white/10" onClick={() => setBulkRemove(true)}>Remove {selectedImages.length}</Button></Can><Button className="border-white/35 bg-transparent text-white hover:bg-white/10" onClick={() => setSelected(new Set())}>Clear</Button></div>}
     <div className="overflow-x-auto rounded border border-line bg-panel">
       {images.isLoading ? <EmptyState title="Loading images" action="Contacting Docker…" /> : rows.length === 0 ? <EmptyState title="No images found" action="Pull an image, or broaden the current filter." /> : <table className="w-full min-w-[860px] border-collapse text-[13px]">
         <thead className="border-b border-line bg-paper text-left text-[11.5px] uppercase tracking-wide text-muted">
@@ -500,7 +537,8 @@ export function ImagesPage() {
     {tag && <TagDialog image={tag} close={() => setTag(null)} done={refresh} />}
     {untag && <UntagDialog image={untag.image} tag={untag.tag} close={() => setUntag(null)} done={refresh} />}
     {remove && <RemoveDialog image={remove} close={() => setRemove(null)} done={refresh} />}
-    {prune && <PruneDialog close={() => setPrune(false)} done={refresh} />}
+    {bulkRemove && <ImageBulkRemoveDialog images={selectedImages} close={() => setBulkRemove(false)} done={() => { refresh(); setSelected(new Set()); }} />}
+    {pruneMode && <PruneDialog dangling={pruneMode === "dangling"} close={() => setPruneMode(null)} done={refresh} />}
     {runImage !== "" && <CreateContainerModal image={runImage} close={() => setRunImage("")} />}
   </section>;
 }

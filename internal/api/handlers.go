@@ -1545,7 +1545,21 @@ func (s *server) handlePrune(c *gin.Context) {
 		Fail(c, invalidInput("kind must be containers, images, volumes, networks, or builder"))
 		return
 	}
-	report, err := s.docker.Prune(c.Request.Context(), kind)
+	var filters map[string][]string
+	if kind == "images" {
+		if raw, ok := c.GetQuery("dangling"); ok {
+			switch raw {
+			case "true":
+				filters = map[string][]string{"dangling": {"true"}}
+			case "false":
+				filters = map[string][]string{"dangling": {"false"}}
+			default:
+				Fail(c, invalidInput("dangling must be true or false"))
+				return
+			}
+		}
+	}
+	report, err := s.docker.Prune(c.Request.Context(), kind, filters)
 	if err != nil {
 		Fail(c, err)
 		return

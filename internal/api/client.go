@@ -47,7 +47,7 @@ type DockerClient interface {
 	CreateNetwork(context.Context, dockerapi.CreateNetworkOptions) (*dockerapi.Network, error)
 	RemoveNetwork(context.Context, string) error
 	NetworkConnect(context.Context, string, string, bool) error
-	Prune(context.Context, string) (*dockerapi.PruneReport, error)
+	Prune(context.Context, string, map[string][]string) (*dockerapi.PruneReport, error)
 	CreateExec(context.Context, string, dockerapi.ExecOptions) (string, error)
 	StartExec(context.Context, string, bool) (dockerapi.ExecSession, error)
 	ResizeExec(context.Context, string, int, int) error

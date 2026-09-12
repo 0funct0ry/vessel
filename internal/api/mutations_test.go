@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/0funct0ry/vessel/internal/dockerapi"
 )
 
 func mutationRequest(router http.Handler, method, target, body string) *httptest.ResponseRecorder {
@@ -37,6 +39,38 @@ func TestMutationRoutesAndValidation(t *testing.T) {
 	}
 	if got := mutationRequest(router, http.MethodPost, "/api/v1/prune/nope", ""); got.Code != http.StatusBadRequest {
 		t.Fatalf("bad prune=%d", got.Code)
+	}
+}
+
+func TestPruneImagesDanglingFilter(t *testing.T) {
+	fake := newFakeDockerClient()
+	fake.prune = &dockerapi.PruneReport{}
+	router := NewRouter(Config{Docker: fake})
+
+	if got := mutationRequest(router, http.MethodPost, "/api/v1/prune/images?dangling=true", ""); got.Code != http.StatusOK {
+		t.Fatalf("dangling=true status=%d %s", got.Code, got.Body.String())
+	}
+	if got := mutationRequest(router, http.MethodPost, "/api/v1/prune/images?dangling=false", ""); got.Code != http.StatusOK {
+		t.Fatalf("dangling=false status=%d %s", got.Code, got.Body.String())
+	}
+	if got := mutationRequest(router, http.MethodPost, "/api/v1/prune/images?dangling=nope", ""); got.Code != http.StatusBadRequest {
+		t.Fatalf("invalid dangling status=%d %s", got.Code, got.Body.String())
+	}
+	if got := mutationRequest(router, http.MethodPost, "/api/v1/prune/volumes?dangling=true", ""); got.Code != http.StatusOK {
+		t.Fatalf("volumes prune status=%d %s", got.Code, got.Body.String())
+	}
+
+	if len(fake.pruneCalls) != 3 {
+		t.Fatalf("pruneCalls=%+v", fake.pruneCalls)
+	}
+	if got := fake.pruneCalls[0].filters["dangling"]; len(got) != 1 || got[0] != "true" {
+		t.Fatalf("dangling=true filters=%v", fake.pruneCalls[0].filters)
+	}
+	if got := fake.pruneCalls[1].filters["dangling"]; len(got) != 1 || got[0] != "false" {
+		t.Fatalf("dangling=false filters=%v", fake.pruneCalls[1].filters)
+	}
+	if fake.pruneCalls[2].kind != "volumes" || fake.pruneCalls[2].filters != nil {
+		t.Fatalf("volumes prune call=%+v", fake.pruneCalls[2])
 	}
 }
 

@@ -255,8 +255,20 @@ type PruneReport struct {
 	Raw            json.RawMessage `json:"-"`
 }
 
-func (c *Client) Prune(ctx context.Context, kind string) (*PruneReport, error) {
-	resp, err := c.do(ctx, http.MethodPost, "/"+url.PathEscape(kind)+"/prune", nil)
+func (c *Client) Prune(ctx context.Context, kind string, filters map[string][]string) (*PruneReport, error) {
+	q := url.Values{}
+	if len(filters) > 0 {
+		f, err := json.Marshal(filters)
+		if err != nil {
+			return nil, fmt.Errorf("dockerapi: encoding filters: %w", err)
+		}
+		q.Set("filters", string(f))
+	}
+	path := "/" + url.PathEscape(kind) + "/prune"
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	resp, err := c.do(ctx, http.MethodPost, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -266,8 +278,11 @@ func (c *Client) Prune(ctx context.Context, kind string) (*PruneReport, error) {
 		return nil, err
 	}
 	var wire struct {
-		Deleted  []string `json:"ContainersDeleted"`
-		Images   []string `json:"ImagesDeleted"`
+		Deleted []string `json:"ContainersDeleted"`
+		Images  []struct {
+			Deleted  string `json:"Deleted"`
+			Untagged string `json:"Untagged"`
+		} `json:"ImagesDeleted"`
 		Volumes  []string `json:"VolumesDeleted"`
 		Networks []string `json:"NetworksDeleted"`
 		Caches   []string `json:"CachesDeleted"`
@@ -277,7 +292,14 @@ func (c *Client) Prune(ctx context.Context, kind string) (*PruneReport, error) {
 		return nil, fmt.Errorf("dockerapi: decoding prune response: %w", err)
 	}
 	deleted := wire.Deleted
-	for _, values := range [][]string{wire.Images, wire.Volumes, wire.Networks, wire.Caches} {
+	for _, image := range wire.Images {
+		if image.Deleted != "" {
+			deleted = append(deleted, image.Deleted)
+		} else if image.Untagged != "" {
+			deleted = append(deleted, image.Untagged)
+		}
+	}
+	for _, values := range [][]string{wire.Volumes, wire.Networks, wire.Caches} {
 		deleted = append(deleted, values...)
 	}
 	return &PruneReport{Deleted: deleted, SpaceReclaimed: wire.Space, Raw: raw}, nil
