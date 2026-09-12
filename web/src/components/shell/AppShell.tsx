@@ -7,10 +7,10 @@ export function AppShell() {
   return (
     <div className="grid h-screen grid-cols-1 overflow-hidden md:grid-cols-[216px_1fr]">
       <Rail />
-      <div className="flex min-w-0 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-col">
         <TopBar />
         <SocketBanner />
-        <main className="flex-1 overflow-y-auto p-[18px]">
+        <main className="min-h-0 flex-1 overflow-y-auto p-[18px]">
           <Outlet />
         </main>
       </div>

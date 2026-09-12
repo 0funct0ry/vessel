@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -120,9 +121,12 @@ func TestHostAggregatesAndDiskBytes(t *testing.T) {
 	pct := 12.5
 	fake.stats = dockerapi.Stats{CPUPercent: &pct, MemUsage: 10, MemLimit: 20}
 	server := &server{docker: fake}
-	cpu, memory, err := server.hostAggregates(context.Background(), []dockerapi.Container{{ID: "run", State: "running"}, {ID: "stop", State: "exited"}})
+	cpu, memory, top, err := server.hostAggregates(context.Background(), []dockerapi.Container{{ID: "run", State: "running"}, {ID: "stop", State: "exited"}})
 	if err != nil || cpu != 12.5 || memory.Used != 10 || memory.Limit != 20 {
 		t.Fatalf("cpu=%v memory=%+v err=%v", cpu, memory, err)
+	}
+	if len(top) != 1 || top[0].ID != "run" || top[0].CPUPercent != 12.5 {
+		t.Fatalf("top=%+v", top)
 	}
 	disk := diskToHostView(&dockerapi.DiskUsageInfo{Images: []dockerapi.DiskImage{{Size: 10, Containers: 0}, {Size: 7, Containers: 1}}, Containers: []dockerapi.DiskContainer{{SizeRW: 3, State: "exited"}}, BuildCache: []dockerapi.DiskBuildCache{{Size: 4, UsageCount: 0}}})
 	if disk.Images != 17 || disk.Containers != 3 || disk.BuildCache != 4 || disk.Reclaimable != 17 {
@@ -130,5 +134,34 @@ func TestHostAggregatesAndDiskBytes(t *testing.T) {
 	}
 	if disk.ImagesReclaimable != 10 || disk.ContainersReclaimable != 3 || disk.BuildCacheReclaimable != 4 {
 		t.Fatalf("per-kind reclaimable disk=%+v", disk)
+	}
+}
+
+func TestHostAggregatesTopCPUAndMemTruncateAndSort(t *testing.T) {
+	fake := newFakeDockerClient()
+	fake.statsByID = map[string]dockerapi.Stats{}
+	containers := make([]dockerapi.Container, 0, 7)
+	for i := 0; i < 7; i++ {
+		id := fmt.Sprintf("c%d", i)
+		pct := float64(i)
+		mem := uint64(i) * 10
+		fake.statsByID[id] = dockerapi.Stats{CPUPercent: &pct, MemUsage: mem, MemLimit: 100}
+		containers = append(containers, dockerapi.Container{ID: id, Names: []string{"/" + id}, State: "running"})
+	}
+	server := &server{docker: fake}
+	_, _, top, err := server.hostAggregates(context.Background(), containers)
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	byCPU := topByCPU(top)
+	byMem := topByMem(top)
+	if len(byCPU) != 5 || len(byMem) != 5 {
+		t.Fatalf("expected 5 entries each, got cpu=%d mem=%d", len(byCPU), len(byMem))
+	}
+	if byCPU[0].ID != "c6" || byCPU[0].CPUPercent != 6 || byCPU[4].ID != "c2" {
+		t.Fatalf("byCPU=%+v", byCPU)
+	}
+	if byMem[0].ID != "c6" || byMem[0].MemUsed != 60 || byMem[4].ID != "c2" {
+		t.Fatalf("byMem=%+v", byMem)
 	}
 }

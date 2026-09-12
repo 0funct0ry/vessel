@@ -35,12 +35,13 @@ export class ApiRequestError extends Error {
 }
 
 export interface ContainerPort { ip?: string; private_port: number; public_port?: number; type: string }
-export interface Container { id: string; name: string; image: string; image_id: string; command: string; created: number; state: string; status: string; ports: ContainerPort[]; labels: Record<string, string> }
+export interface Container { id: string; name: string; image: string; image_id: string; command: string; created: number; state: string; status: string; health: string; ports: ContainerPort[]; labels: Record<string, string> }
 export interface ContainerMount { type: string; name?: string; source: string; destination: string; rw: boolean }
 export interface ContainerNetwork { network_id: string; ip_address: string }
 export interface ContainerDetail { id: string; name: string; image: string; command: string[]; created: string; state: string; status: string; exit_code: number; health: string; restart_policy: string; mounts: ContainerMount[]; networks: Record<string, ContainerNetwork>; env: string[]; labels: Record<string, string>; raw: unknown }
 export interface HostDisk { images: number; containers: number; volumes: number; build_cache: number; reclaimable: number; images_reclaimable: number; containers_reclaimable: number; volumes_reclaimable: number; build_cache_reclaimable: number }
-export interface Host { server_version: string; api_version: string; operating_system: string; os_type: string; architecture: string; kernel_version: string; cpus: number; memory_bytes: number; cpu_pct: number; memory: { used: number; limit: number }; containers: { total: number; running: number; paused: number; stopped: number }; disk: HostDisk }
+export interface HostTopEntry { id: string; name: string; cpu_pct?: number; mem_used?: number; mem_limit?: number }
+export interface Host { server_version: string; api_version: string; operating_system: string; os_type: string; architecture: string; kernel_version: string; cpus: number; memory_bytes: number; cpu_pct: number; memory: { used: number; limit: number }; containers: { total: number; running: number; paused: number; stopped: number }; disk: HostDisk; top_cpu: HostTopEntry[]; top_mem: HostTopEntry[] }
 export interface Image { id: string; repo_tags: string[]; repo_digests: string[]; created: number; size: number; labels: Record<string, string>; used_by_count: number; dangling: boolean }
 export interface ImageUse { container_id: string; container_name: string; state: string }
 export interface ImageDetail { id: string; repo_tags: string[]; repo_digests: string[]; created: string; size: number; architecture: string; os: string; env: string[]; entrypoint: string[]; cmd: string[]; labels: Record<string, string>; used_by_count: number; used_by: ImageUse[]; dangling: boolean; raw: unknown }

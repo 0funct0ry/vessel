@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // Port mirrors one entry of a container's port mapping.
@@ -30,6 +31,24 @@ type Container struct {
 	Ports   []Port            `json:"Ports"`
 	Labels  map[string]string `json:"Labels"`
 	Mounts  []ContainerMount  `json:"Mounts"`
+	Health  string            `json:"-"`
+}
+
+// parseHealthFromStatus extracts the health check state Docker embeds as a
+// parenthetical suffix on the list endpoint's free-text Status (there is no
+// structured health field on GET /containers/json, only on the per-container
+// inspect endpoint).
+func parseHealthFromStatus(status string) string {
+	switch {
+	case strings.Contains(status, "(healthy)"):
+		return "healthy"
+	case strings.Contains(status, "(unhealthy)"):
+		return "unhealthy"
+	case strings.Contains(status, "(health: starting)"):
+		return "starting"
+	default:
+		return ""
+	}
 }
 
 // ListContainersOptions controls GET /containers/json.
@@ -66,6 +85,9 @@ func (c *Client) ListContainers(ctx context.Context, opts ListContainersOptions)
 	var containers []Container
 	if err := json.NewDecoder(resp.Body).Decode(&containers); err != nil {
 		return nil, fmt.Errorf("dockerapi: decoding /containers/json response: %w", err)
+	}
+	for i := range containers {
+		containers[i].Health = parseHealthFromStatus(containers[i].Status)
 	}
 	return containers, nil
 }

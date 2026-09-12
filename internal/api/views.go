@@ -37,6 +37,7 @@ type containerView struct {
 	Created int64             `json:"created"`
 	State   string            `json:"state"`
 	Status  string            `json:"status"`
+	Health  string            `json:"health"`
 	Ports   []portView        `json:"ports"`
 	Labels  map[string]string `json:"labels"`
 }
@@ -185,6 +186,16 @@ type hostView struct {
 	Containers      hostContainersView `json:"containers"`
 	Images          int                `json:"images"`
 	Disk            hostDiskView       `json:"disk"`
+	TopCPU          []hostTopView      `json:"top_cpu"`
+	TopMem          []hostTopView      `json:"top_mem"`
+}
+
+type hostTopView struct {
+	ID         string  `json:"id"`
+	Name       string  `json:"name"`
+	CPUPercent float64 `json:"cpu_pct,omitempty"`
+	MemUsed    uint64  `json:"mem_used,omitempty"`
+	MemLimit   uint64  `json:"mem_limit,omitempty"`
 }
 
 type topView struct {
@@ -207,7 +218,7 @@ func containerToView(v dockerapi.Container) containerView {
 	return containerView{
 		ID: v.ID, Name: normalizedContainerName(v.Names), Image: v.Image,
 		ImageID: v.ImageID, Command: v.Command, Created: v.Created, State: v.State,
-		Status: v.Status, Ports: ports, Labels: nonNilMap(v.Labels),
+		Status: v.Status, Health: v.Health, Ports: ports, Labels: nonNilMap(v.Labels),
 	}
 }
 

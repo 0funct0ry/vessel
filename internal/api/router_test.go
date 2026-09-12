@@ -46,6 +46,7 @@ type fakeDockerClient struct {
 	logCalls       []dockerapi.LogsOptions
 	prune          *dockerapi.PruneReport
 	stats          dockerapi.Stats
+	statsByID      map[string]dockerapi.Stats
 	statsStream    dockerapi.StatsStream
 	statsCalls     []string
 	execCalls      []dockerapi.ExecOptions
@@ -116,7 +117,10 @@ func (f *fakeDockerClient) StatsStream(_ context.Context, id string) (dockerapi.
 	return f.statsStream, f.err
 }
 
-func (f *fakeDockerClient) Stats(context.Context, string) (dockerapi.Stats, error) {
+func (f *fakeDockerClient) Stats(_ context.Context, id string) (dockerapi.Stats, error) {
+	if s, ok := f.statsByID[id]; ok {
+		return s, f.err
+	}
 	return f.stats, f.err
 }
 
@@ -286,7 +290,7 @@ func TestContainerListExactJSON(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", response.Code, response.Body.String())
 	}
-	assertJSON(t, response.Body.String(), `[{"id":"abc123","name":"api","image":"acme/api:1","image_id":"sha256:image","command":"/app","created":42,"state":"running","status":"Up 2 minutes","ports":[{"ip":"127.0.0.1","private_port":8080,"public_port":7373,"type":"tcp"}],"labels":{"env":"test"}}]`)
+	assertJSON(t, response.Body.String(), `[{"id":"abc123","name":"api","image":"acme/api:1","image_id":"sha256:image","command":"/app","created":42,"state":"running","status":"Up 2 minutes","health":"","ports":[{"ip":"127.0.0.1","private_port":8080,"public_port":7373,"type":"tcp"}],"labels":{"env":"test"}}]`)
 	if len(fake.containerCalls) != 1 || !fake.containerCalls[0].All {
 		t.Fatalf("ListContainers calls = %+v, want one all=true call", fake.containerCalls)
 	}
@@ -426,7 +430,7 @@ func TestHostAndTopJSON(t *testing.T) {
 	router := NewRouter(Config{Docker: fake})
 
 	response := performRequest(router, http.MethodGet, "/api/v1/host")
-	assertJSON(t, response.Body.String(), `{"id":"host1","server_version":"27.1","api_version":"1.47","min_api_version":"1.24","operating_system":"Linux","os_type":"linux","architecture":"arm64","kernel_version":"6.8","cpus":8,"memory_bytes":17179869184,"cpu_pct":0,"memory":{"used":0,"limit":0},"containers":{"total":4,"running":2,"paused":1,"stopped":1},"images":7,"disk":{"images":920,"containers":10,"volumes":0,"build_cache":3,"reclaimable":933,"images_reclaimable":920,"containers_reclaimable":10,"volumes_reclaimable":0,"build_cache_reclaimable":3}}`)
+	assertJSON(t, response.Body.String(), `{"id":"host1","server_version":"27.1","api_version":"1.47","min_api_version":"1.24","operating_system":"Linux","os_type":"linux","architecture":"arm64","kernel_version":"6.8","cpus":8,"memory_bytes":17179869184,"cpu_pct":0,"memory":{"used":0,"limit":0},"containers":{"total":4,"running":2,"paused":1,"stopped":1},"images":7,"disk":{"images":920,"containers":10,"volumes":0,"build_cache":3,"reclaimable":933,"images_reclaimable":920,"containers_reclaimable":10,"volumes_reclaimable":0,"build_cache_reclaimable":3},"top_cpu":[],"top_mem":[]}`)
 
 	response = performRequest(router, http.MethodGet, "/api/v1/containers/c1/top?ps_args=aux")
 	assertJSON(t, response.Body.String(), `{"titles":["PID","CMD"],"processes":[["1","/app"]]}`)

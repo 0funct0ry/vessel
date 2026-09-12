@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1109,7 +1110,7 @@ func (s *server) handleHost(c *gin.Context) {
 		Fail(c, err)
 		return
 	}
-	cpu, memory, err := s.hostAggregates(c.Request.Context(), running)
+	cpu, memory, top, err := s.hostAggregates(c.Request.Context(), running)
 	if err != nil {
 		Fail(c, err)
 		return
@@ -1133,20 +1134,29 @@ func (s *server) handleHost(c *gin.Context) {
 		},
 		Images: info.Images,
 		Disk:   diskToHostView(disk),
+		TopCPU: topByCPU(top),
+		TopMem: topByMem(top),
 	})
 }
 
-func (s *server) hostAggregates(ctx context.Context, containers []dockerapi.Container) (float64, hostMemoryView, error) {
+type hostTopEntry struct {
+	ID, Name          string
+	CPUPercent        float64
+	MemUsed, MemLimit uint64
+}
+
+func (s *server) hostAggregates(ctx context.Context, containers []dockerapi.Container) (float64, hostMemoryView, []hostTopEntry, error) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var cpu float64
 	var memory hostMemoryView
+	var top []hostTopEntry
 	var firstErr error
 	for _, container := range containers {
 		if container.State != "running" {
 			continue
 		}
-		id := container.ID
+		id, name := container.ID, normalizedContainerName(container.Names)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -1162,15 +1172,41 @@ func (s *server) hostAggregates(ctx context.Context, containers []dockerapi.Cont
 				}
 				return
 			}
+			var cpuPct float64
 			if sample.CPUPercent != nil {
-				cpu += *sample.CPUPercent
+				cpuPct = *sample.CPUPercent
 			}
+			cpu += cpuPct
 			memory.Used += sample.MemUsage
 			memory.Limit += sample.MemLimit
+			top = append(top, hostTopEntry{ID: id, Name: name, CPUPercent: cpuPct, MemUsed: sample.MemUsage, MemLimit: sample.MemLimit})
 		}()
 	}
 	wg.Wait()
-	return cpu, memory, firstErr
+	return cpu, memory, top, firstErr
+}
+
+func topByCPU(entries []hostTopEntry) []hostTopView {
+	sorted := append([]hostTopEntry(nil), entries...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].CPUPercent > sorted[j].CPUPercent })
+	return topEntriesToView(sorted)
+}
+
+func topByMem(entries []hostTopEntry) []hostTopView {
+	sorted := append([]hostTopEntry(nil), entries...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].MemUsed > sorted[j].MemUsed })
+	return topEntriesToView(sorted)
+}
+
+func topEntriesToView(sorted []hostTopEntry) []hostTopView {
+	if len(sorted) > 5 {
+		sorted = sorted[:5]
+	}
+	views := make([]hostTopView, 0, len(sorted))
+	for _, e := range sorted {
+		views = append(views, hostTopView{ID: e.ID, Name: e.Name, CPUPercent: e.CPUPercent, MemUsed: e.MemUsed, MemLimit: e.MemLimit})
+	}
+	return views
 }
 
 func diskToHostView(disk *dockerapi.DiskUsageInfo) hostDiskView {
