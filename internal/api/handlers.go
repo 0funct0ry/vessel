@@ -1388,11 +1388,19 @@ func (s *server) handleVolumeClone(c *gin.Context) {
 
 func (s *server) handleNetworkCreate(c *gin.Context) {
 	var body struct {
-		Name    string            `json:"name"`
-		Driver  string            `json:"driver"`
-		Subnet  string            `json:"subnet"`
-		Gateway string            `json:"gateway"`
-		Labels  map[string]string `json:"labels"`
+		Name         string            `json:"name"`
+		Driver       string            `json:"driver"`
+		Internal     bool              `json:"internal"`
+		Attachable   bool              `json:"attachable"`
+		EnableIPv6   bool              `json:"enable_ipv6"`
+		IPAMDriver   string            `json:"ipam_driver"`
+		Subnet       string            `json:"subnet"`
+		Gateway      string            `json:"gateway"`
+		IPRange      string            `json:"ip_range"`
+		AuxAddresses map[string]string `json:"aux_addresses"`
+		IPAMOptions  map[string]string `json:"ipam_options"`
+		DriverOpts   map[string]string `json:"driver_opts"`
+		Labels       map[string]string `json:"labels"`
 	}
 	if err := decodeBody(c, &body); err != nil {
 		Fail(c, err)
@@ -1402,7 +1410,28 @@ func (s *server) handleNetworkCreate(c *gin.Context) {
 		Fail(c, err)
 		return
 	}
-	network, err := s.docker.CreateNetwork(c.Request.Context(), dockerapi.CreateNetworkOptions{Name: body.Name, Driver: body.Driver, Subnet: body.Subnet, Gateway: body.Gateway, Labels: body.Labels})
+	if err := validKeyedMap("aux_addresses", body.AuxAddresses); err != nil {
+		Fail(c, err)
+		return
+	}
+	if err := validKeyedMap("ipam_options", body.IPAMOptions); err != nil {
+		Fail(c, err)
+		return
+	}
+	if err := validKeyedMap("driver_opts", body.DriverOpts); err != nil {
+		Fail(c, err)
+		return
+	}
+	if err := validKeyedMap("labels", body.Labels); err != nil {
+		Fail(c, err)
+		return
+	}
+	network, err := s.docker.CreateNetwork(c.Request.Context(), dockerapi.CreateNetworkOptions{
+		Name: body.Name, Driver: body.Driver,
+		Internal: body.Internal, Attachable: body.Attachable, EnableIPv6: body.EnableIPv6,
+		IPAMDriver: body.IPAMDriver, Subnet: body.Subnet, Gateway: body.Gateway, IPRange: body.IPRange,
+		AuxAddresses: body.AuxAddresses, IPAMOptions: body.IPAMOptions, DriverOpts: body.DriverOpts, Labels: body.Labels,
+	})
 	if err != nil {
 		Fail(c, err)
 		return
@@ -1769,11 +1798,45 @@ func (s *server) handleNetworks(c *gin.Context) {
 		Fail(c, err)
 		return
 	}
+	attachNetworkContainers(c.Request.Context(), s.docker, networks)
 	views := make([]networkView, 0, len(networks))
 	for _, network := range networks {
 		views = append(views, networkToView(network, false))
 	}
 	c.JSON(http.StatusOK, filterSortNetworks(views, query))
+}
+
+// attachNetworkContainers fills in each network's Containers map from the
+// container list, since Docker's GET /networks (unlike GET /networks/{id})
+// always returns Containers as null/empty. Best-effort: a failure to list
+// containers leaves networks as Docker returned them rather than failing the
+// whole request.
+func attachNetworkContainers(ctx context.Context, docker DockerClient, networks []dockerapi.Network) {
+	containers, err := docker.ListContainers(ctx, dockerapi.ListContainersOptions{All: true})
+	if err != nil {
+		return
+	}
+	byNetwork := make(map[string]map[string]dockerapi.NetworkContainer, len(networks))
+	for _, ct := range containers {
+		for name, cn := range ct.NetworkSettings.Networks {
+			// A stopped container can retain a stale NetworkSettings entry for
+			// a network it is no longer live on (no endpoint, no IP) — only
+			// count entries with an actual address, matching what Docker's own
+			// GET /networks/{id} considers "attached".
+			if cn.IPAddress == "" && cn.GlobalIPv6Address == "" {
+				continue
+			}
+			if byNetwork[name] == nil {
+				byNetwork[name] = make(map[string]dockerapi.NetworkContainer)
+			}
+			byNetwork[name][ct.ID] = dockerapi.NetworkContainer{Name: normalizedContainerName(ct.Names), IPv4Address: cn.IPAddress, IPv6Address: cn.GlobalIPv6Address}
+		}
+	}
+	for i := range networks {
+		if attached, ok := byNetwork[networks[i].Name]; ok {
+			networks[i].Containers = attached
+		}
+	}
 }
 
 func (s *server) handleNetwork(c *gin.Context) {

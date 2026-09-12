@@ -124,8 +124,10 @@ type volumeView struct {
 }
 
 type ipamConfigView struct {
-	Subnet  string `json:"subnet,omitempty"`
-	Gateway string `json:"gateway,omitempty"`
+	Subnet       string            `json:"subnet,omitempty"`
+	Gateway      string            `json:"gateway,omitempty"`
+	IPRange      string            `json:"ip_range,omitempty"`
+	AuxAddresses map[string]string `json:"aux_addresses,omitempty"`
 }
 
 type networkConnectionView struct {
@@ -136,14 +138,20 @@ type networkConnectionView struct {
 }
 
 type networkView struct {
-	ID         string                  `json:"id"`
-	Name       string                  `json:"name"`
-	Driver     string                  `json:"driver"`
-	Scope      string                  `json:"scope"`
-	IPAM       []ipamConfigView        `json:"ipam"`
-	Labels     map[string]string       `json:"labels"`
-	Containers []networkConnectionView `json:"containers"`
-	Raw        json.RawMessage         `json:"raw,omitempty"`
+	ID          string                  `json:"id"`
+	Name        string                  `json:"name"`
+	Driver      string                  `json:"driver"`
+	Scope       string                  `json:"scope"`
+	Internal    bool                    `json:"internal"`
+	Attachable  bool                    `json:"attachable"`
+	EnableIPv6  bool                    `json:"enable_ipv6"`
+	IPAMDriver  string                  `json:"ipam_driver"`
+	IPAM        []ipamConfigView        `json:"ipam"`
+	IPAMOptions map[string]string       `json:"ipam_options"`
+	DriverOpts  map[string]string       `json:"driver_opts"`
+	Labels      map[string]string       `json:"labels"`
+	Containers  []networkConnectionView `json:"containers"`
+	Raw         json.RawMessage         `json:"raw,omitempty"`
 }
 
 type hostContainersView struct {
@@ -371,7 +379,7 @@ func volumeSizes(disk *dockerapi.DiskUsageInfo) map[string]*int64 {
 func networkToView(v dockerapi.Network, includeRaw bool) networkView {
 	ipam := make([]ipamConfigView, 0, len(v.IPAM.Config))
 	for _, cfg := range v.IPAM.Config {
-		ipam = append(ipam, ipamConfigView{cfg.Subnet, cfg.Gateway})
+		ipam = append(ipam, ipamConfigView{cfg.Subnet, cfg.Gateway, cfg.IPRange, nonNilMap(cfg.AuxAddress)})
 	}
 	connections := make([]networkConnectionView, 0, len(v.Containers))
 	for id, c := range v.Containers {
@@ -384,7 +392,9 @@ func networkToView(v dockerapi.Network, includeRaw bool) networkView {
 		return connections[i].ContainerName < connections[j].ContainerName
 	})
 	view := networkView{
-		ID: v.ID, Name: v.Name, Driver: v.Driver, Scope: v.Scope, IPAM: ipam,
+		ID: v.ID, Name: v.Name, Driver: v.Driver, Scope: v.Scope,
+		Internal: v.Internal, Attachable: v.Attachable, EnableIPv6: v.EnableIPv6,
+		IPAMDriver: v.IPAM.Driver, IPAM: ipam, IPAMOptions: nonNilMap(v.IPAM.Options), DriverOpts: nonNilMap(v.Options),
 		Labels: nonNilMap(v.Labels), Containers: connections,
 	}
 	if includeRaw {

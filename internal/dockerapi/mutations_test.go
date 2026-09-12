@@ -97,3 +97,32 @@ func TestMutations_EngineRequests(t *testing.T) {
 		t.Fatalf("requests:\n%s\nwant:\n%s", strings.Join(seen, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+func TestCreateNetwork_FullOptions(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		_, _ = io.WriteString(w, `{"Id":"net1"}`)
+	}))
+	defer srv.Close()
+	c, err := New("tcp://" + srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.CreateNetwork(context.Background(), CreateNetworkOptions{
+		Name: "edge", Driver: "bridge",
+		Internal: true, Attachable: true, EnableIPv6: true,
+		IPAMDriver: "default", Subnet: "172.30.0.0/16", Gateway: "172.30.0.1", IPRange: "172.30.1.0/24",
+		AuxAddresses: map[string]string{"host": "172.30.0.2"},
+		IPAMOptions:  map[string]string{"foo": "bar"},
+		DriverOpts:   map[string]string{"com.docker.network.bridge.name": "br-edge"},
+		Labels:       map[string]string{"env": "prod"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"Name":"edge","Driver":"bridge","Internal":true,"Attachable":true,"EnableIPv6":true,"IPAM":{"Driver":"default","Config":[{"Subnet":"172.30.0.0/16","Gateway":"172.30.0.1","IPRange":"172.30.1.0/24","AuxiliaryAddresses":{"host":"172.30.0.2"}}],"Options":{"foo":"bar"}},"Options":{"com.docker.network.bridge.name":"br-edge"},"Labels":{"env":"prod"}}`
+	if got := strings.TrimSpace(string(body)); got != want {
+		t.Fatalf("request body:\n%s\nwant:\n%s", got, want)
+	}
+}

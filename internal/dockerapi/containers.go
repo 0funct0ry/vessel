@@ -20,18 +20,21 @@ type Port struct {
 
 // Container is the summary view of one entry from GET /containers/json.
 type Container struct {
-	ID      string            `json:"Id"`
-	Names   []string          `json:"Names"`
-	Image   string            `json:"Image"`
-	ImageID string            `json:"ImageID"`
-	Command string            `json:"Command"`
-	Created int64             `json:"Created"`
-	State   string            `json:"State"`
-	Status  string            `json:"Status"`
-	Ports   []Port            `json:"Ports"`
-	Labels  map[string]string `json:"Labels"`
-	Mounts  []ContainerMount  `json:"Mounts"`
-	Health  string            `json:"-"`
+	ID              string            `json:"Id"`
+	Names           []string          `json:"Names"`
+	Image           string            `json:"Image"`
+	ImageID         string            `json:"ImageID"`
+	Command         string            `json:"Command"`
+	Created         int64             `json:"Created"`
+	State           string            `json:"State"`
+	Status          string            `json:"Status"`
+	Ports           []Port            `json:"Ports"`
+	Labels          map[string]string `json:"Labels"`
+	Mounts          []ContainerMount  `json:"Mounts"`
+	Health          string            `json:"-"`
+	NetworkSettings struct {
+		Networks map[string]ContainerNetwork `json:"Networks"`
+	} `json:"NetworkSettings"`
 }
 
 // parseHealthFromStatus extracts the health check state Docker embeds as a
@@ -103,8 +106,9 @@ type ContainerMount struct {
 
 // ContainerNetwork is one entry of a container's NetworkSettings.Networks map.
 type ContainerNetwork struct {
-	NetworkID string `json:"NetworkID"`
-	IPAddress string `json:"IPAddress"`
+	NetworkID         string `json:"NetworkID"`
+	IPAddress         string `json:"IPAddress"`
+	GlobalIPv6Address string `json:"GlobalIPv6Address"`
 }
 
 // ContainerDetail is the view of GET /containers/{id}/json.

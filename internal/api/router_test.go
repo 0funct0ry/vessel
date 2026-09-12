@@ -581,10 +581,52 @@ func TestNetworkDetailAndContainerDetailJSON(t *testing.T) {
 	router := NewRouter(Config{Docker: fake})
 
 	response := performRequest(router, http.MethodGet, "/api/v1/networks/n1")
-	assertJSON(t, response.Body.String(), `{"id":"n1","name":"edge","driver":"bridge","scope":"local","ipam":[{"subnet":"172.20.0.0/16","gateway":"172.20.0.1"}],"labels":{},"containers":[{"container_id":"c1","container_name":"api","ipv4_address":"172.20.0.2/16","ipv6_address":"fd00::2/64"},{"container_id":"c2","container_name":"worker","ipv4_address":"172.20.0.3/16","ipv6_address":""}],"raw":{"Id":"n1"}}`)
+	assertJSON(t, response.Body.String(), `{"id":"n1","name":"edge","driver":"bridge","scope":"local","internal":false,"attachable":false,"enable_ipv6":false,"ipam_driver":"","ipam":[{"subnet":"172.20.0.0/16","gateway":"172.20.0.1"}],"ipam_options":{},"driver_opts":{},"labels":{},"containers":[{"container_id":"c1","container_name":"api","ipv4_address":"172.20.0.2/16","ipv6_address":"fd00::2/64"},{"container_id":"c2","container_name":"worker","ipv4_address":"172.20.0.3/16","ipv6_address":""}],"raw":{"Id":"n1"}}`)
 
 	response = performRequest(router, http.MethodGet, "/api/v1/containers/c1")
 	assertJSON(t, response.Body.String(), `{"id":"c1","name":"api","image":"acme/api:1","command":[],"created":"now","state":"running","status":"running","exit_code":0,"health":"","restart_policy":"","mounts":[],"networks":{},"env":[],"labels":{},"raw":{"Id":"c1"}}`)
+}
+
+func TestNetworksListReflectsConnectedContainers(t *testing.T) {
+	fake := newFakeDockerClient()
+	fake.networks = []dockerapi.Network{
+		{ID: "n1", Name: "bridge", Driver: "bridge", Scope: "local"},
+		{ID: "n2", Name: "isolated", Driver: "bridge", Scope: "local"},
+	}
+	fake.containers = []dockerapi.Container{{
+		ID: "c1", Names: []string{"/api"},
+	}, {
+		ID: "c2", Names: []string{"/stale"},
+	}}
+	fake.containers[0].NetworkSettings.Networks = map[string]dockerapi.ContainerNetwork{
+		"bridge": {NetworkID: "n1", IPAddress: "172.17.0.2"},
+	}
+	// A stopped container can retain a stale network entry with no live
+	// endpoint (no IP) — it must not be counted as attached.
+	fake.containers[1].NetworkSettings.Networks = map[string]dockerapi.ContainerNetwork{
+		"isolated": {NetworkID: "", IPAddress: ""},
+	}
+	router := NewRouter(Config{Docker: fake})
+
+	response := performRequest(router, http.MethodGet, "/api/v1/networks")
+	assertJSON(t, response.Body.String(), `[{"id":"n1","name":"bridge","driver":"bridge","scope":"local","internal":false,"attachable":false,"enable_ipv6":false,"ipam_driver":"","ipam":[],"ipam_options":{},"driver_opts":{},"labels":{},"containers":[{"container_id":"c1","container_name":"api","ipv4_address":"172.17.0.2","ipv6_address":""}]},{"id":"n2","name":"isolated","driver":"bridge","scope":"local","internal":false,"attachable":false,"enable_ipv6":false,"ipam_driver":"","ipam":[],"ipam_options":{},"driver_opts":{},"labels":{},"containers":[]}]`)
+}
+
+func TestNetworkCreateRejectsEmptyMapKeys(t *testing.T) {
+	fake := newFakeDockerClient()
+	fake.network = &dockerapi.Network{ID: "n1", Name: "edge"}
+	router := NewRouter(Config{Docker: fake})
+
+	for _, body := range []string{
+		`{"name":"edge","aux_addresses":{"":"10.0.0.1"}}`,
+		`{"name":"edge","ipam_options":{"":"x"}}`,
+		`{"name":"edge","driver_opts":{"":"x"}}`,
+	} {
+		response := performRequestBody(router, http.MethodPost, "/api/v1/networks", body)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("body=%s status=%d: %s", body, response.Code, response.Body.String())
+		}
+	}
 }
 
 func TestHostAndTopJSON(t *testing.T) {
@@ -743,7 +785,7 @@ func TestRemainingReadRoutes(t *testing.T) {
 	response = performRequest(router, http.MethodGet, "/api/v1/volumes/data")
 	assertJSON(t, response.Body.String(), `{"name":"data","driver":"local","mountpoint":"/data","created_at":"now","labels":{},"scope":"local","used_by":[{"container_id":"c1","container_name":"api","mount_path":"/srv/data","rw":true}],"raw":{"Name":"data"}}`)
 	response = performRequest(router, http.MethodGet, "/api/v1/networks")
-	assertJSON(t, response.Body.String(), `[{"id":"net","name":"bridge","driver":"bridge","scope":"local","ipam":[],"labels":{},"containers":[]}]`)
+	assertJSON(t, response.Body.String(), `[{"id":"net","name":"bridge","driver":"bridge","scope":"local","internal":false,"attachable":false,"enable_ipv6":false,"ipam_driver":"","ipam":[],"ipam_options":{},"driver_opts":{},"labels":{},"containers":[]}]`)
 }
 
 func errorMessage(body []byte) string {

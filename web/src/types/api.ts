@@ -49,9 +49,9 @@ export interface HistoryLayer { id: string; created: number; created_by: string;
 export interface DockerfileReconstruction { dockerfile: string; approximate: true }
 export interface VolumeUse { container_id: string; container_name: string; mount_path: string; rw: boolean }
 export interface Volume { name: string; driver: string; mountpoint: string; size_bytes?: number; created_at: string; labels: Record<string, string>; scope: string; used_by: VolumeUse[]; raw?: unknown }
-export interface NetworkIPAM { subnet?: string; gateway?: string }
+export interface NetworkIPAM { subnet?: string; gateway?: string; ip_range?: string; aux_addresses?: Record<string, string> }
 export interface NetworkConnection { container_id: string; container_name: string; ipv4_address: string; ipv6_address: string }
-export interface Network { id: string; name: string; driver: string; scope: string; ipam: NetworkIPAM[]; labels: Record<string, string>; containers: NetworkConnection[]; raw?: unknown }
+export interface Network { id: string; name: string; driver: string; scope: string; internal: boolean; attachable: boolean; enable_ipv6: boolean; ipam_driver: string; ipam: NetworkIPAM[]; ipam_options: Record<string, string>; driver_opts: Record<string, string>; labels: Record<string, string>; containers: NetworkConnection[]; raw?: unknown }
 export interface CreateContainerResponse { id: string; name: string; warnings: string[]; start_error?: string }
 export interface CommitContainerResponse { image_id: string }
 export interface Top { titles: string[]; processes: string[][] }

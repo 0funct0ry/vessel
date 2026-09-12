@@ -163,22 +163,41 @@ func (c *Client) RemoveVolume(ctx context.Context, name string, force bool) erro
 }
 
 type CreateNetworkOptions struct {
-	Name, Driver, Subnet, Gateway string
-	Labels                        map[string]string
+	Name, Driver                         string
+	Internal, Attachable, EnableIPv6     bool
+	IPAMDriver, Subnet, Gateway, IPRange string
+	AuxAddresses                         map[string]string
+	IPAMOptions                          map[string]string
+	DriverOpts                           map[string]string
+	Labels                               map[string]string
 }
 
 func (c *Client) CreateNetwork(ctx context.Context, opts CreateNetworkOptions) (*Network, error) {
 	type ipam struct {
-		Config []IPAMConfig `json:"Config,omitempty"`
+		Driver  string            `json:"Driver,omitempty"`
+		Config  []IPAMConfig      `json:"Config,omitempty"`
+		Options map[string]string `json:"Options,omitempty"`
 	}
 	request := struct {
-		Name   string            `json:"Name"`
-		Driver string            `json:"Driver,omitempty"`
-		IPAM   ipam              `json:"IPAM,omitempty"`
-		Labels map[string]string `json:"Labels,omitempty"`
-	}{Name: opts.Name, Driver: opts.Driver, Labels: opts.Labels}
-	if opts.Subnet != "" || opts.Gateway != "" {
-		request.IPAM = ipam{Config: []IPAMConfig{{Subnet: opts.Subnet, Gateway: opts.Gateway}}}
+		Name       string            `json:"Name"`
+		Driver     string            `json:"Driver,omitempty"`
+		Internal   bool              `json:"Internal,omitempty"`
+		Attachable bool              `json:"Attachable,omitempty"`
+		EnableIPv6 bool              `json:"EnableIPv6,omitempty"`
+		IPAM       ipam              `json:"IPAM,omitempty"`
+		Options    map[string]string `json:"Options,omitempty"`
+		Labels     map[string]string `json:"Labels,omitempty"`
+	}{
+		Name: opts.Name, Driver: opts.Driver,
+		Internal: opts.Internal, Attachable: opts.Attachable, EnableIPv6: opts.EnableIPv6,
+		Options: opts.DriverOpts, Labels: opts.Labels,
+	}
+	if opts.IPAMDriver != "" || opts.Subnet != "" || opts.Gateway != "" || opts.IPRange != "" || len(opts.AuxAddresses) > 0 || len(opts.IPAMOptions) > 0 {
+		var config []IPAMConfig
+		if opts.Subnet != "" || opts.Gateway != "" || opts.IPRange != "" || len(opts.AuxAddresses) > 0 {
+			config = []IPAMConfig{{Subnet: opts.Subnet, Gateway: opts.Gateway, IPRange: opts.IPRange, AuxAddress: opts.AuxAddresses}}
+		}
+		request.IPAM = ipam{Driver: opts.IPAMDriver, Config: config, Options: opts.IPAMOptions}
 	}
 	body, err := json.Marshal(request)
 	if err != nil {
@@ -196,7 +215,13 @@ func (c *Client) CreateNetwork(ctx context.Context, opts CreateNetworkOptions) (
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
 		return nil, fmt.Errorf("dockerapi: decoding created network: %w", err)
 	}
-	return &Network{ID: created.ID, Name: opts.Name, Driver: opts.Driver, Labels: opts.Labels}, nil
+	network := &Network{ID: created.ID, Name: opts.Name, Driver: opts.Driver, Internal: opts.Internal, Attachable: opts.Attachable, EnableIPv6: opts.EnableIPv6, Options: opts.DriverOpts, Labels: opts.Labels}
+	network.IPAM.Driver = opts.IPAMDriver
+	network.IPAM.Options = opts.IPAMOptions
+	if opts.Subnet != "" || opts.Gateway != "" || opts.IPRange != "" || len(opts.AuxAddresses) > 0 {
+		network.IPAM.Config = []IPAMConfig{{Subnet: opts.Subnet, Gateway: opts.Gateway, IPRange: opts.IPRange, AuxAddress: opts.AuxAddresses}}
+	}
+	return network, nil
 }
 func (c *Client) RemoveNetwork(ctx context.Context, id string) error {
 	resp, err := c.do(ctx, http.MethodDelete, "/networks/"+url.PathEscape(id), nil)

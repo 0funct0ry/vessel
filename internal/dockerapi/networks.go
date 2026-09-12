@@ -18,20 +18,28 @@ type NetworkContainer struct {
 
 // IPAMConfig is one entry of a network's IPAM.Config list.
 type IPAMConfig struct {
-	Subnet  string `json:"Subnet,omitempty"`
-	Gateway string `json:"Gateway,omitempty"`
+	Subnet     string            `json:"Subnet,omitempty"`
+	Gateway    string            `json:"Gateway,omitempty"`
+	IPRange    string            `json:"IPRange,omitempty"`
+	AuxAddress map[string]string `json:"AuxiliaryAddresses,omitempty"`
 }
 
 // Network is the view of one entry from GET /networks, and of GET
 // /networks/{id}.
 type Network struct {
-	ID     string `json:"Id"`
-	Name   string `json:"Name"`
-	Driver string `json:"Driver"`
-	Scope  string `json:"Scope"`
-	IPAM   struct {
-		Config []IPAMConfig `json:"Config"`
+	ID         string `json:"Id"`
+	Name       string `json:"Name"`
+	Driver     string `json:"Driver"`
+	Scope      string `json:"Scope"`
+	Internal   bool   `json:"Internal"`
+	Attachable bool   `json:"Attachable"`
+	EnableIPv6 bool   `json:"EnableIPv6"`
+	IPAM       struct {
+		Driver  string            `json:"Driver"`
+		Config  []IPAMConfig      `json:"Config"`
+		Options map[string]string `json:"Options"`
 	} `json:"IPAM"`
+	Options    map[string]string           `json:"Options"`
 	Containers map[string]NetworkContainer `json:"Containers"`
 	Labels     map[string]string           `json:"Labels"`
 	Raw        json.RawMessage             `json:"-"`
