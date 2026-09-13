@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pause, Pencil, Play, RotateCw, Square, Trash2 } from "lucide-react";
 import { Can } from "../auth/Can";
 import { LogViewer } from "../components/containers/LogViewer";
 import { FileBrowser } from "../components/containers/FileBrowser";
+import type { ConsoleStatus } from "../components/containers/Console";
 import { CreateContainerModal } from "../components/containers/CreateContainerModal";
 import { CommitContainerModal } from "../components/containers/CommitContainerModal";
 import { Button } from "../components/ui/Button";
@@ -14,7 +15,12 @@ import { useToast } from "../components/ui/Toast";
 import { api } from "../lib/api";
 import { bytes, canStop, containerQuery, flagState, httpPort, uptime } from "../lib/containers";
 import { getPreferences } from "../lib/preferences";
-import type { Container, ContainerDetail, Top } from "../types/api";
+import type { Container, ContainerDetail, Top, VersionInfo } from "../types/api";
+
+const Console = lazy(() => import("../components/containers/Console"));
+
+const CONSOLE_STATUS_LABEL: Record<ConsoleStatus, string> = { idle: "", connecting: "connecting…", connected: "connected", disconnected: "disconnected" };
+const CONSOLE_STATUS_DOT: Record<ConsoleStatus, string> = { idle: "", connecting: "bg-pause", connected: "bg-hull", disconnected: "bg-muted" };
 
 function RemoveDialog({ container, close, done }: { container: Container; close: () => void; done: () => void }) { const [volumes, setVolumes] = useState(false); const [typed, setTyped] = useState(""); const [busy, setBusy] = useState(false); const { push } = useToast(); const allowed = !volumes || typed === container.name; async function remove() { setBusy(true); try { await api.delete(`/containers/${encodeURIComponent(container.id)}?force=true${volumes ? "&volumes=true" : ""}`); push(`Removed ${container.name}.`); done(); close(); } catch (e) { push(`Could not remove ${container.name}: ${e instanceof Error ? e.message : "try again"}.`, "error"); setBusy(false); } } return <div role="dialog" aria-modal="true" aria-labelledby="remove-title" className="fixed inset-0 z-40 grid place-items-center bg-ink/45 p-4"><div className="w-full max-w-md rounded border border-line bg-panel p-5 shadow-lg"><h2 id="remove-title" className="m-0 text-lg">Remove {container.name}?</h2><p className="mt-2 text-[13px] text-muted">This stops and permanently removes the container.</p><label className="mt-4 flex items-center gap-2 text-[13px]"><input type="checkbox" checked={volumes} onChange={(e) => setVolumes(e.target.checked)} /> Remove anonymous volumes too</label>{volumes && <label className="mt-3 block text-[13px]">Type <b>{container.name}</b> to confirm<input autoFocus value={typed} onChange={(e) => setTyped(e.target.value)} className="mt-1 block w-full rounded border border-line px-2 py-1" /></label>}<div className="mt-5 flex justify-end gap-2"><Button onClick={close}>Cancel</Button><Button variant="danger" disabled={!allowed || busy} onClick={() => void remove()}>Remove</Button></div></div></div>; }
 
@@ -71,8 +77,12 @@ export function ContainerDetailPage() {
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [commitOpen, setCommitOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [consoleOpened, setConsoleOpened] = useState(requested === "console");
+  const [consoleStatus, setConsoleStatus] = useState<ConsoleStatus>("idle");
   const queryClient = useQueryClient();
   const detail = useQuery({ queryKey: ["container", id], queryFn: () => api.get<ContainerDetail>(`/containers/${encodeURIComponent(id)}`) });
+  const version = useQuery({ queryKey: ["version"], queryFn: () => api.get<VersionInfo>("/version") });
+  const execAllowed = version.data ? version.data.allow_exec : true;
   const c = detail.data;
   const processes = useQuery({ queryKey: ["container", id, "top"], queryFn: () => api.get<Top>(`/containers/${encodeURIComponent(id)}/top`), enabled: tab === "processes" && c?.state === "running", refetchInterval: 3000 });
   if (detail.isLoading) return <EmptyState title="Loading container" action="Contacting Docker…" />;
@@ -80,7 +90,12 @@ export function ContainerDetailPage() {
   const env = c.env.map((entry) => { const at = entry.indexOf("="); return [at < 0 ? entry : entry.slice(0, at), at < 0 ? "" : entry.slice(at + 1)] as const; });
   const copy = async () => { try { await navigator.clipboard.writeText(JSON.stringify(c.raw, null, 2)); push("Inspect JSON copied."); } catch { push("Could not copy JSON. Select it and copy manually.", "error"); } };
   async function lifecycle(action: LifecycleAction) { try { await api.post(`/containers/${encodeURIComponent(c!.id)}/${action}`); await queryClient.invalidateQueries({ queryKey: ["container", id] }); await queryClient.invalidateQueries({ queryKey: ["containers"] }); } catch (e) { push(`Could not ${action} ${c!.name}: ${e instanceof Error ? e.message : "try again"}.`, "error"); } }
-  const selectTab = (name: ContainerTab) => { setTab(name); setParams(name === "overview" ? {} : { tab: name }, { replace: true }); };
+  const selectTab = (name: ContainerTab) => {
+    if (name === "console" && !execAllowed) return;
+    if (name === "console") setConsoleOpened(true);
+    setTab(name);
+    setParams(name === "overview" ? {} : { tab: name }, { replace: true });
+  };
   return <section>
     <div className="mb-3 flex items-center gap-3">
       <Flag state={flagState(c.state)} /><h1 className="m-0 text-lg">{c.name}</h1><span className="font-mono text-[12px] text-muted">{c.id.slice(0, 12)}</span>
@@ -89,12 +104,23 @@ export function ContainerDetailPage() {
       <Can do="containers.recreate"><Button onClick={() => setEditing(true)}>Edit</Button></Can>
       <Can do="containers.commit"><Button onClick={() => setCommitOpen(true)}>Commit to image</Button></Can>
     </div>
-    <div role="tablist" className="mb-4 flex gap-1 border-b border-line">{CONTAINER_TABS.map((name) => <button key={name} role="tab" aria-selected={tab === name} onClick={() => selectTab(name)} className={`px-3 py-2 text-[13px] capitalize ${tab === name ? "border-b-2 border-hull font-medium text-text" : "text-muted"}`}>{name}</button>)}</div>
+    <div role="tablist" className="mb-4 flex gap-1 border-b border-line">{CONTAINER_TABS.map((name) => {
+      const disabled = name === "console" && !execAllowed;
+      return <button key={name} role="tab" aria-selected={tab === name} disabled={disabled} title={disabled ? "Disabled — server started with --allow-exec=false" : undefined} onClick={() => selectTab(name)} className={`flex items-center gap-1.5 px-3 py-2 text-[13px] capitalize ${tab === name ? "border-b-2 border-hull font-medium text-text" : "text-muted"} ${disabled ? "cursor-not-allowed opacity-45" : ""}`}>
+        {name}
+        {name === "console" && execAllowed && consoleOpened && consoleStatus !== "idle" && <span className="flex items-center gap-1 normal-case text-[11px] text-muted"><span className={`h-1.5 w-1.5 rounded-full ${CONSOLE_STATUS_DOT[consoleStatus]}`} />{CONSOLE_STATUS_LABEL[consoleStatus]}</span>}
+      </button>;
+    })}</div>
     {tab === "overview" && <div className="grid gap-3 md:grid-cols-2"><Info title="Configuration" rows={[["Image", c.image], ["Command", c.command.join(" ") || "—"], ["Created", c.created], ["Restart policy", c.restart_policy || "—"], ["Health", c.health || "not configured"], ["Exit code", String(c.exit_code)]]} /><div className="rounded border border-line bg-panel p-4"><h2 className="m-0 mb-3 text-[14px]">Environment</h2><dl className="grid grid-cols-[minmax(100px,auto)_1fr] gap-x-4 gap-y-2 text-[12px]">{env.map(([key, value]) => <><dt key={`${key}-k`} className="font-mono text-muted">{key}</dt><dd key={`${key}-v`} className="min-w-0 break-all font-mono">{revealed.has(key) ? value : "••••••••••••"} <button className="ml-1 text-link underline" onClick={() => setRevealed((set) => new Set(set).add(key))}>reveal</button></dd></>)}</dl><p className="mb-0 mt-3 text-[12px] text-muted">Revealing a value writes an audit log line.</p></div><Info title="Mounts" rows={c.mounts.map((m) => [m.destination, `${m.name || m.source} · ${m.rw ? "rw" : "ro"}`])} /><Info title="Networks" rows={Object.entries(c.networks).map(([name, n]) => [name, n.ip_address || "—"])} /></div>}
     {tab === "logs" && <LogViewer containerID={c.id} />}
     {tab === "files" && <FileBrowser containerID={c.id} />}
     {tab === "processes" && <Processes running={c.state === "running"} data={processes.data} loading={processes.isLoading} />}
-    {["stats", "console"].includes(tab) && <EmptyState title={`${tab[0].toUpperCase() + tab.slice(1)} is not built yet`} action={tab === "console" ? "The interactive terminal has not shipped yet." : "The full stats experience has not shipped yet."} />}
+    {tab === "stats" && <EmptyState title="Stats is not built yet" action="The full stats experience has not shipped yet." />}
+    {consoleOpened && <div hidden={tab !== "console"}>
+      <Suspense fallback={<EmptyState title="Loading console" action="Fetching the terminal…" />}>
+        <Console containerID={c.id} authOn={version.data?.auth_mode === "on"} onStatusChange={setConsoleStatus} />
+      </Suspense>
+    </div>}
     {tab === "security" && <Info title="Security" rows={[["Privileged", pill(c.security.privileged)], ["Read-only rootfs", pill(c.security.readonly_rootfs)], ["User", c.security.user || "default"], ["User namespace mode", c.security.userns_mode || "default"], ["AppArmor profile", c.security.apparmor_profile || "default"]]} />}
     {tab === "resources" && <Info title="Resources" rows={[["CPU shares", c.resources.cpu_shares ? String(c.resources.cpu_shares) : "unlimited"], ["CPUs", c.resources.cpus ? c.resources.cpus.toFixed(2) : "unlimited"], ["Memory", c.resources.memory ? bytes(c.resources.memory) : "unlimited"], ["Memory + swap", c.resources.memory_swap > 0 ? bytes(c.resources.memory_swap) : "unlimited"], ["Memory reservation", c.resources.memory_reservation ? bytes(c.resources.memory_reservation) : "unlimited"], ["PIDs limit", c.resources.pids_limit > 0 ? String(c.resources.pids_limit) : "unlimited"], ["OOM kill disabled", pill(c.resources.oom_kill_disable)], ["CPU period", c.resources.cpu_period ? String(c.resources.cpu_period) : "default"], ["CPU quota", c.resources.cpu_quota ? String(c.resources.cpu_quota) : "default"], ["Cgroup parent", c.resources.cgroup_parent || "default"], ["Cgroup namespace mode", c.resources.cgroupns_mode || "default"]]} />}
     {tab === "inspect" && <div><div className="mb-2 flex items-center"><span className="text-[13px] text-muted">Full engine response</span><Button className="ml-auto" onClick={() => void copy()}>Copy JSON</Button></div><pre className="max-h-[65vh] overflow-auto rounded border border-line bg-ink p-4 text-[12px] text-[#D7E7EA]">{JSON.stringify(c.raw, null, 2)}</pre></div>}
