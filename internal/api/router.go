@@ -24,6 +24,7 @@ type Config struct {
 	Store       store.Store
 	AuthEnabled bool
 	AllowExec   bool
+	StoreMode   string
 	Tokens      *auth.Tokens
 	Webhooks    *webhook.Engine
 
@@ -34,17 +35,19 @@ type Config struct {
 }
 
 type server struct {
-	docker   DockerClient
-	stats    *statsHub
-	store    store.Store
-	tokens   *auth.Tokens
-	tickets  *auth.Tickets
-	throttle *auth.Throttle
-	webhooks *webhook.Engine
-	basePath string
-	logger   *slog.Logger
-	authOn   bool
-	execOn   bool
+	docker    DockerClient
+	stats     *statsHub
+	store     store.Store
+	tokens    *auth.Tokens
+	tickets   *auth.Tickets
+	throttle  *auth.Throttle
+	webhooks  *webhook.Engine
+	basePath  string
+	logger    *slog.Logger
+	authOn    bool
+	execOn    bool
+	readOnly  bool
+	storeMode string
 }
 
 // NewRouter builds the Gin engine and registers the v1 HTTP API.
@@ -62,10 +65,10 @@ func NewRouter(cfg Config) *gin.Engine {
 	r.Use(readOnlyMiddleware(cfg.ReadOnly))
 
 	basePath := normalizeBasePath(cfg.BasePath)
-	s := &server{docker: cfg.Docker, stats: newStatsHub(cfg.Docker), store: cfg.Store, tokens: cfg.Tokens, tickets: auth.NewTickets(), throttle: auth.NewThrottle(), webhooks: cfg.Webhooks, basePath: basePath, logger: logger, authOn: cfg.AuthEnabled, execOn: cfg.AllowExec && !cfg.ReadOnly}
+	s := &server{docker: cfg.Docker, stats: newStatsHub(cfg.Docker), store: cfg.Store, tokens: cfg.Tokens, tickets: auth.NewTickets(), throttle: auth.NewThrottle(), webhooks: cfg.Webhooks, basePath: basePath, logger: logger, authOn: cfg.AuthEnabled, execOn: cfg.AllowExec && !cfg.ReadOnly, readOnly: cfg.ReadOnly, storeMode: cfg.StoreMode}
 	v1 := r.Group(basePath + "/api/v1")
 	v1.GET("/health", handleHealth)
-	v1.GET("/version", handleVersion)
+	v1.GET("/version", s.handleVersion)
 	v1.POST("/auth/login", s.handleLogin)
 	if s.execOn {
 		// This handler authenticates with the one-time WebSocket ticket rather
@@ -156,6 +159,14 @@ func NewRouter(cfg Config) *gin.Engine {
 	v1.POST("/webhooks/:id/test", s.handleWebhookTest)
 	v1.GET("/webhooks/:id/deliveries", s.handleDeliveries)
 	v1.POST("/deliveries/:id/redeliver", s.handleRedeliver)
+	v1.GET("/users", s.handleUsers)
+	v1.POST("/users", s.handleUserCreate)
+	v1.PATCH("/users/:id", s.handleUserUpdate)
+	v1.DELETE("/users/:id", s.handleUserDelete)
+	v1.POST("/users/:id/password", s.handleUserSetPassword)
+	v1.GET("/tokens", s.handleTokens)
+	v1.POST("/tokens", s.handleTokenCreate)
+	v1.DELETE("/tokens/:id", s.handleTokenDelete)
 
 	mountStatic(r, basePath, cfg.WebDist, cfg.WebDistErr)
 
@@ -174,6 +185,24 @@ func handleHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-func handleVersion(c *gin.Context) {
-	c.JSON(http.StatusOK, version.Get())
+type versionResponse struct {
+	version.Info
+	AuthMode  string `json:"auth_mode"`
+	ReadOnly  bool   `json:"read_only"`
+	AllowExec bool   `json:"allow_exec"`
+	StoreMode string `json:"store_mode"`
+}
+
+func (s *server) handleVersion(c *gin.Context) {
+	authMode := "off"
+	if s.authOn {
+		authMode = "on"
+	}
+	c.JSON(http.StatusOK, versionResponse{
+		Info:      version.Get(),
+		AuthMode:  authMode,
+		ReadOnly:  s.readOnly,
+		AllowExec: s.execOn,
+		StoreMode: s.storeMode,
+	})
 }

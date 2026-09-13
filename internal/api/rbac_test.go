@@ -88,6 +88,14 @@ var protectedRoutes = []protectedRoute{
 	{http.MethodPost, "/api/v1/stacks/acme/down", "", store.RoleOperator},
 	{http.MethodPost, "/api/v1/stacks/acme/redeploy", "", store.RoleOperator},
 	{http.MethodPost, "/api/v1/prune/images", "", store.RoleAdmin},
+	{http.MethodGet, "/api/v1/users", "", store.RoleAdmin},
+	{http.MethodPost, "/api/v1/users", `{"username":"new","password":"password1","role":"viewer"}`, store.RoleAdmin},
+	{http.MethodPatch, "/api/v1/users/u1", `{"role":"viewer"}`, store.RoleAdmin},
+	{http.MethodDelete, "/api/v1/users/u1", "", store.RoleAdmin},
+	{http.MethodPost, "/api/v1/users/u1/password", `{"password":"password1"}`, store.RoleViewer},
+	{http.MethodGet, "/api/v1/tokens", "", store.RoleViewer},
+	{http.MethodPost, "/api/v1/tokens", `{"name":"ci"}`, store.RoleViewer},
+	{http.MethodDelete, "/api/v1/tokens/t1", "", store.RoleViewer},
 }
 
 func TestRoleMiddlewareMatrix(t *testing.T) {

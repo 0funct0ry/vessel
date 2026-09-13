@@ -71,6 +71,39 @@ func testStore(t *testing.T, open newStore) {
 	if err != nil || len(users) != 1 || users[0].Role != store.RoleOperator {
 		t.Fatalf("users = %#v, %v", users, err)
 	}
+	tok, err := s.CreateToken(ctx, store.Token{ID: "tok_one", UserID: u.ID, Name: "ci", Hash: "hash-one", CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateToken(ctx, store.Token{ID: "tok_two", UserID: u.ID, Name: "dup", Hash: "hash-one", CreatedAt: now}); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("duplicate token hash = %v", err)
+	}
+	if got, err := s.GetTokenByHash(ctx, "hash-one"); err != nil || got.ID != tok.ID {
+		t.Fatalf("get token by hash = %#v, %v", got, err)
+	}
+	if _, err := s.GetTokenByHash(ctx, "missing"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("missing token = %v", err)
+	}
+	if err := s.TouchTokenLastUsed(ctx, tok.ID, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.GetTokenByHash(ctx, "hash-one"); err != nil || got.LastUsedAt == nil || !got.LastUsedAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("touched token = %#v, %v", got, err)
+	}
+	tokens, err := s.ListTokensByUser(ctx, u.ID)
+	if err != nil || len(tokens) != 1 || tokens[0].ID != tok.ID {
+		t.Fatalf("list tokens = %#v, %v", tokens, err)
+	}
+	if err := s.DeleteToken(ctx, tok.ID, 99999); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("delete token wrong owner = %v", err)
+	}
+	if err := s.DeleteToken(ctx, tok.ID, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetTokenByHash(ctx, "hash-one"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("deleted token = %v", err)
+	}
+
 	if err := s.DeleteUser(ctx, u.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +246,7 @@ func TestSQLiteMigrationAndNewerSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	v, err := s.SchemaVersion(context.Background())
-	if err != nil || v != 3 {
+	if err != nil || v != 4 {
 		t.Fatalf("version = %d, %v", v, err)
 	}
 	_ = s.Close()
@@ -224,7 +257,7 @@ func TestSQLiteMigrationAndNewerSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("UPDATE schema_version SET version=4"); err != nil {
+	if _, err := db.Exec("UPDATE schema_version SET version=5"); err != nil {
 		t.Fatal(err)
 	}
 	_ = db.Close()

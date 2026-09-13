@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/0funct0ry/vessel/internal/store"
 )
@@ -22,10 +23,12 @@ type Store struct {
 	stackNames map[string]string
 	nextUserID int64
 	events     map[string]store.Event
+	tokens     map[string]store.Token
+	tokenHash  map[string]string
 }
 
 func New() *Store {
-	return &Store{settings: map[string]string{}, users: map[int64]store.User{}, usernames: map[string]int64{}, webhooks: map[string]store.Webhook{}, deliveries: map[string]store.Delivery{}, byWebhook: map[string][]string{}, events: map[string]store.Event{}, stacks: map[string]store.Stack{}, stackNames: map[string]string{}, nextUserID: 1}
+	return &Store{settings: map[string]string{}, users: map[int64]store.User{}, usernames: map[string]int64{}, webhooks: map[string]store.Webhook{}, deliveries: map[string]store.Delivery{}, byWebhook: map[string][]string{}, events: map[string]store.Event{}, stacks: map[string]store.Stack{}, stackNames: map[string]string{}, nextUserID: 1, tokens: map[string]store.Token{}, tokenHash: map[string]string{}}
 }
 func (s *Store) Close() error { return nil }
 func (s *Store) GetSetting(_ context.Context, key string) (string, error) {
@@ -111,6 +114,63 @@ func (s *Store) DeleteUser(_ context.Context, id int64) error {
 	delete(s.usernames, u.Username)
 	return nil
 }
+func (s *Store) CreateToken(_ context.Context, t store.Token) (store.Token, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.tokens[t.ID]; ok {
+		return store.Token{}, store.ErrConflict
+	}
+	if _, ok := s.tokenHash[t.Hash]; ok {
+		return store.Token{}, store.ErrConflict
+	}
+	s.tokens[t.ID] = t
+	s.tokenHash[t.Hash] = t.ID
+	return t, nil
+}
+func (s *Store) GetTokenByHash(_ context.Context, hash string) (store.Token, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	id, ok := s.tokenHash[hash]
+	if !ok {
+		return store.Token{}, store.ErrNotFound
+	}
+	return s.tokens[id], nil
+}
+func (s *Store) ListTokensByUser(_ context.Context, userID int64) ([]store.Token, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]store.Token, 0)
+	for _, t := range s.tokens {
+		if t.UserID == userID {
+			out = append(out, t)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+func (s *Store) DeleteToken(_ context.Context, id string, userID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tokens[id]
+	if !ok || t.UserID != userID {
+		return store.ErrNotFound
+	}
+	delete(s.tokens, id)
+	delete(s.tokenHash, t.Hash)
+	return nil
+}
+func (s *Store) TouchTokenLastUsed(_ context.Context, id string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tokens[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	t.LastUsedAt = &at
+	s.tokens[id] = t
+	return nil
+}
+
 func (s *Store) CreateWebhook(_ context.Context, w store.Webhook) (store.Webhook, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -103,10 +103,19 @@ var Policies = []Policy{
 	{http.MethodPost, "/api/v1/webhooks/:id/test", store.RoleAdmin, "webhooks.test", false},
 	{http.MethodGet, "/api/v1/webhooks/:id/deliveries", store.RoleAdmin, "webhooks.deliveries", false},
 	{http.MethodPost, "/api/v1/deliveries/:id/redeliver", store.RoleAdmin, "deliveries.redeliver", false},
-	{http.MethodGet, "/api/v1/users", store.RoleAdmin, "users.read", false},
-	{http.MethodPost, "/api/v1/users", store.RoleAdmin, "users.create", false},
-	{http.MethodPatch, "/api/v1/users/:id", store.RoleAdmin, "users.update", false},
-	{http.MethodDelete, "/api/v1/users/:id", store.RoleAdmin, "users.remove", false},
+	{http.MethodGet, "/api/v1/users", store.RoleAdmin, "users.read", true},
+	{http.MethodPost, "/api/v1/users", store.RoleAdmin, "users.create", true},
+	{http.MethodPatch, "/api/v1/users/:id", store.RoleAdmin, "users.update", true},
+	{http.MethodDelete, "/api/v1/users/:id", store.RoleAdmin, "users.remove", true},
+	// Any authenticated caller may hit this route to change their own password;
+	// the admin-reset-someone-else's-password path is enforced in the handler,
+	// not here, since it depends on whose :id is in the URL vs. the caller.
+	{http.MethodPost, "/api/v1/users/:id/password", store.RoleViewer, "users.password", true},
+	// Personal API tokens always act on the caller's own tokens; any
+	// authenticated role may manage its own.
+	{http.MethodGet, "/api/v1/tokens", store.RoleViewer, "tokens.read", true},
+	{http.MethodPost, "/api/v1/tokens", store.RoleViewer, "tokens.create", true},
+	{http.MethodDelete, "/api/v1/tokens/:id", store.RoleViewer, "tokens.remove", true},
 }
 
 // RequiredRole returns the role policy for method and concrete or Gin-style

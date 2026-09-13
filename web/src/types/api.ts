@@ -14,6 +14,32 @@ export interface MeResponse {
   capabilities: Capabilities;
 }
 
+export interface VesselUser {
+  id: number;
+  username: string;
+  role: Role;
+  created_at: string;
+  last_login_at?: string;
+}
+
+export interface Token {
+  id: string;
+  name: string;
+  created_at: string;
+  last_used_at?: string;
+  expires_at?: string;
+}
+
+export interface VersionInfo {
+  version: string;
+  commit: string;
+  date: string;
+  auth_mode: "on" | "off";
+  read_only: boolean;
+  allow_exec: boolean;
+  store_mode: "memory" | "sqlite";
+}
+
 export interface ApiError {
   code: string;
   message: string;

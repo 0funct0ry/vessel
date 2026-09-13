@@ -31,6 +31,10 @@ type queryError struct {
 
 type validationError struct{ code, message string }
 
+type lastAdminError struct{}
+
+func (lastAdminError) Error() string { return "cannot remove or demote the last remaining admin" }
+
 type containerNotRunningError struct{}
 
 func (containerNotRunningError) Error() string { return "container is not running" }
@@ -85,6 +89,7 @@ func Fail(c *gin.Context, err error) {
 	var rerr *resourceError
 	var apiErr *dockerapi.APIError
 	var runningErr containerNotRunningError
+	var adminErr lastAdminError
 	var recreateErr *dockerapi.RecreateFailed
 	switch {
 	case errors.As(err, &recreateErr):
@@ -103,6 +108,12 @@ func Fail(c *gin.Context, err error) {
 	case errors.As(err, &runningErr):
 		status = http.StatusConflict
 		body = errorBody{Code: "container_not_running", Message: "container must be running", DockerStatus: http.StatusConflict}
+	case errors.As(err, &adminErr):
+		status = http.StatusConflict
+		body = errorBody{Code: "last_admin", Message: "cannot remove or demote the last remaining admin"}
+	case errors.Is(err, store.ErrNotFound):
+		status = http.StatusNotFound
+		body = errorBody{Code: "not_found", Message: "resource not found"}
 	case errors.Is(err, dockerapi.ErrUnreachable):
 		status = http.StatusServiceUnavailable
 		body = errorBody{Code: "docker_unreachable", Message: "Docker Engine is unreachable"}

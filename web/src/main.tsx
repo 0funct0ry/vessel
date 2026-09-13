@@ -6,7 +6,10 @@ import { App } from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import { ToastProvider } from "./components/ui/Toast";
 import { basePath } from "./lib/basePath";
+import { applyStoredPreferences } from "./lib/preferences";
 import "./index.css";
+
+applyStoredPreferences();
 
 const queryClient = new QueryClient();
 

@@ -3,6 +3,73 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --c-ink: #0b1f2a;
+    --c-hull: #12303f;
+    --c-steel: #24505f;
+    --c-railtext: #a9c2cc;
+    --c-paper: #edf1f0;
+    --c-panel: #ffffff;
+    --c-line: #cbd8d6;
+    --c-linesoft: #e1e8e7;
+    --c-text: #12303f;
+    --c-muted: #5c7480;
+    --c-run: #1f7a5c;
+    --c-pause: #c8860d;
+    --c-fail: #b7362a;
+    --c-stop: #8da3ac;
+    --c-link: #1f5e7e;
+    --row-height: 32px;
+  }
+
+  /* Appearance panel's theme=system: follow the OS unless the user picked a
+     side explicitly (data-theme=light/dark below overrides this). */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --c-ink: #050f15;
+      --c-hull: #1a3f52;
+      --c-steel: #2e6478;
+      --c-railtext: #9db6c0;
+      --c-paper: #0f2129;
+      --c-panel: #16303b;
+      --c-line: #2c4b56;
+      --c-linesoft: #1e3942;
+      --c-text: #dce8ea;
+      --c-muted: #8aa3ac;
+      --c-run: #3fb389;
+      --c-pause: #e0a53a;
+      --c-fail: #e0685a;
+      --c-stop: #6d8891;
+      --c-link: #6fb3d9;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --c-ink: #050f15;
+    --c-hull: #1a3f52;
+    --c-steel: #2e6478;
+    --c-railtext: #9db6c0;
+    --c-paper: #0f2129;
+    --c-panel: #16303b;
+    --c-line: #2c4b56;
+    --c-linesoft: #1e3942;
+    --c-text: #dce8ea;
+    --c-muted: #8aa3ac;
+    --c-run: #3fb389;
+    --c-pause: #e0a53a;
+    --c-fail: #e0685a;
+    --c-stop: #6d8891;
+    --c-link: #6fb3d9;
+  }
+
+  :root[data-density="compact"] {
+    --row-height: 24px;
+  }
+
+  .h-row {
+    height: var(--row-height) !important;
+  }
+
   html {
     font-size: 14px;
   }

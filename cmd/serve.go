@@ -77,6 +77,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create Docker client: %w", err)
 	}
 	var persistence store.Store
+	storeMode := "memory"
 	if cfg.DB == "" {
 		persistence = memstore.New()
 	} else {
@@ -84,6 +85,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("open store: %w", err)
 		}
+		storeMode = "sqlite"
 	}
 	defer persistence.Close()
 	authEnabled, impliedAuth, err := effectiveAuth(context.Background(), cfg.Auth, persistence)
@@ -115,6 +117,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Store:       persistence,
 		AuthEnabled: authEnabled,
 		AllowExec:   cfg.AllowExec,
+		StoreMode:   storeMode,
 		Tokens:      tokens,
 		Logger:      slog.Default(),
 		Webhooks:    webhookEngine,

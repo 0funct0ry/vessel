@@ -15,7 +15,7 @@ import (
 	"github.com/0funct0ry/vessel/internal/store"
 )
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 type Store struct{ db *sql.DB }
 
@@ -68,6 +68,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if v < 3 {
 		if _, err = tx.ExecContext(ctx, store.Migration0003); err != nil {
 			return fmt.Errorf("apply migration 3: %w", err)
+		}
+	}
+	if v < 4 {
+		if _, err = tx.ExecContext(ctx, store.Migration0004); err != nil {
+			return fmt.Errorf("apply migration 4: %w", err)
 		}
 	}
 	return tx.Commit()
@@ -175,6 +180,78 @@ func (s *Store) DeleteUser(ctx context.Context, id int64) error {
 		return store.ErrNotFound
 	}
 	return nil
+}
+
+func scanToken(row interface{ Scan(...any) error }) (store.Token, error) {
+	var t store.Token
+	var created string
+	var lastUsed, expires sql.NullString
+	err := row.Scan(&t.ID, &t.UserID, &t.Name, &t.Hash, &created, &lastUsed, &expires)
+	if err != nil {
+		return store.Token{}, dbErr(err)
+	}
+	var e error
+	t.CreatedAt, e = time.Parse(time.RFC3339Nano, created)
+	if e != nil {
+		return store.Token{}, e
+	}
+	if lastUsed.Valid {
+		lu, e := time.Parse(time.RFC3339Nano, lastUsed.String)
+		if e != nil {
+			return store.Token{}, e
+		}
+		t.LastUsedAt = &lu
+	}
+	if expires.Valid {
+		ex, e := time.Parse(time.RFC3339Nano, expires.String)
+		if e != nil {
+			return store.Token{}, e
+		}
+		t.ExpiresAt = &ex
+	}
+	return t, nil
+}
+
+const tokenColumns = "id,user_id,name,hash,created_at,last_used_at,expires_at"
+
+func (s *Store) CreateToken(ctx context.Context, t store.Token) (store.Token, error) {
+	_, err := s.db.ExecContext(ctx, "INSERT INTO tokens("+tokenColumns+") VALUES(?,?,?,?,?,?,?)",
+		t.ID, t.UserID, t.Name, t.Hash, ts(t.CreatedAt), nullableTime(t.LastUsedAt), nullableTime(t.ExpiresAt))
+	return t, dbErr(err)
+}
+func (s *Store) GetTokenByHash(ctx context.Context, hash string) (store.Token, error) {
+	return scanToken(s.db.QueryRowContext(ctx, "SELECT "+tokenColumns+" FROM tokens WHERE hash=?", hash))
+}
+func (s *Store) ListTokensByUser(ctx context.Context, userID int64) ([]store.Token, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT "+tokenColumns+" FROM tokens WHERE user_id=? ORDER BY created_at", userID)
+	if err != nil {
+		return nil, dbErr(err)
+	}
+	defer rows.Close()
+	var out []store.Token
+	for rows.Next() {
+		t, e := scanToken(rows)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+func (s *Store) DeleteToken(ctx context.Context, id string, userID int64) error {
+	r, err := s.db.ExecContext(ctx, "DELETE FROM tokens WHERE id=? AND user_id=?", id, userID)
+	if err != nil {
+		return dbErr(err)
+	}
+	n, _ := r.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+func (s *Store) TouchTokenLastUsed(ctx context.Context, id string, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, "UPDATE tokens SET last_used_at=? WHERE id=?", ts(at), id)
+	return dbErr(err)
 }
 
 func jsonText(b []byte) any {

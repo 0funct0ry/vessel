@@ -38,6 +38,16 @@ type User struct {
 	LastLoginAt  *time.Time
 }
 
+type Token struct {
+	ID         string
+	UserID     int64
+	Name       string
+	Hash       string
+	CreatedAt  time.Time
+	LastUsedAt *time.Time
+	ExpiresAt  *time.Time
+}
+
 type Webhook struct {
 	ID          string
 	Name        string
@@ -111,6 +121,12 @@ type Store interface {
 	ListUsers(context.Context) ([]User, error)
 	UpdateUser(context.Context, User) (User, error)
 	DeleteUser(context.Context, int64) error
+
+	CreateToken(context.Context, Token) (Token, error)
+	GetTokenByHash(context.Context, string) (Token, error)
+	ListTokensByUser(context.Context, int64) ([]Token, error)
+	DeleteToken(context.Context, string, int64) error
+	TouchTokenLastUsed(context.Context, string, time.Time) error
 
 	CreateWebhook(context.Context, Webhook) (Webhook, error)
 	GetWebhook(context.Context, string) (Webhook, error)

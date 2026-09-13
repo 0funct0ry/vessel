@@ -2,11 +2,13 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/0funct0ry/vessel/internal/auth"
 	"github.com/0funct0ry/vessel/internal/store"
@@ -70,6 +72,20 @@ func (s *server) authMiddleware() gin.HandlerFunc {
 			authFailure(c, "invalid_token")
 			return
 		}
+		if auth.IsToken(token) {
+			claims, err := s.authenticateToken(c, token)
+			if err != nil {
+				if errors.Is(err, auth.ErrExpiredToken) {
+					authFailure(c, "token_expired")
+					return
+				}
+				authFailure(c, "invalid_token")
+				return
+			}
+			c.Set(claimsKey, claims)
+			c.Next()
+			return
+		}
 		claims, err := s.tokens.Parse(token)
 		if errors.Is(err, auth.ErrExpiredToken) {
 			authFailure(c, "token_expired")
@@ -82,6 +98,26 @@ func (s *server) authMiddleware() gin.HandlerFunc {
 		c.Set(claimsKey, claims)
 		c.Next()
 	}
+}
+
+// authenticateToken resolves a personal API token to the same auth.Claims
+// shape a session JWT produces, so downstream handlers and roleMiddleware
+// don't need to know which credential was used.
+func (s *server) authenticateToken(c *gin.Context, raw string) (auth.Claims, error) {
+	tok, err := s.store.GetTokenByHash(c.Request.Context(), auth.HashToken(raw))
+	if err != nil {
+		return auth.Claims{}, auth.ErrInvalidToken
+	}
+	if tok.ExpiresAt != nil && time.Now().UTC().After(*tok.ExpiresAt) {
+		return auth.Claims{}, auth.ErrExpiredToken
+	}
+	u, err := s.store.GetUser(c.Request.Context(), tok.UserID)
+	if err != nil {
+		return auth.Claims{}, auth.ErrInvalidToken
+	}
+	now := time.Now().UTC()
+	_ = s.store.TouchTokenLastUsed(c.Request.Context(), tok.ID, now)
+	return auth.Claims{Name: u.Username, Role: u.Role, RegisteredClaims: jwt.RegisteredClaims{Subject: fmt.Sprint(u.ID)}}, nil
 }
 
 func isSSERoute(path string) bool {

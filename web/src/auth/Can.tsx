@@ -47,9 +47,16 @@ const REQUIRED_ROLE: Record<string, "operator" | "admin"> = {
   "networks.disconnect": "operator",
   "prune.run": "admin",
   "webhooks.read": "admin",
-  "webhooks.write": "admin",
+  "webhooks.create": "admin",
+  "webhooks.update": "admin",
+  "webhooks.remove": "admin",
+  "webhooks.test": "admin",
+  "webhooks.deliveries": "admin",
+  "deliveries.redeliver": "admin",
   "users.read": "admin",
-  "users.write": "admin",
+  "users.create": "admin",
+  "users.update": "admin",
+  "users.remove": "admin",
 };
 
 // Capabilities disabled by --allow-exec=false regardless of role, per M15.4's

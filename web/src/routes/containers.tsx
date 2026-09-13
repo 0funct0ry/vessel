@@ -13,6 +13,7 @@ import { Flag } from "../components/ui/Flag";
 import { useToast } from "../components/ui/Toast";
 import { api } from "../lib/api";
 import { bytes, canStop, containerQuery, flagState, httpPort, uptime } from "../lib/containers";
+import { getPreferences } from "../lib/preferences";
 import type { Container, ContainerDetail, Top } from "../types/api";
 
 function RemoveDialog({ container, close, done }: { container: Container; close: () => void; done: () => void }) { const [volumes, setVolumes] = useState(false); const [typed, setTyped] = useState(""); const [busy, setBusy] = useState(false); const { push } = useToast(); const allowed = !volumes || typed === container.name; async function remove() { setBusy(true); try { await api.delete(`/containers/${encodeURIComponent(container.id)}?force=true${volumes ? "&volumes=true" : ""}`); push(`Removed ${container.name}.`); done(); close(); } catch (e) { push(`Could not remove ${container.name}: ${e instanceof Error ? e.message : "try again"}.`, "error"); setBusy(false); } } return <div role="dialog" aria-modal="true" aria-labelledby="remove-title" className="fixed inset-0 z-40 grid place-items-center bg-ink/45 p-4"><div className="w-full max-w-md rounded border border-line bg-panel p-5 shadow-lg"><h2 id="remove-title" className="m-0 text-lg">Remove {container.name}?</h2><p className="mt-2 text-[13px] text-muted">This stops and permanently removes the container.</p><label className="mt-4 flex items-center gap-2 text-[13px]"><input type="checkbox" checked={volumes} onChange={(e) => setVolumes(e.target.checked)} /> Remove anonymous volumes too</label>{volumes && <label className="mt-3 block text-[13px]">Type <b>{container.name}</b> to confirm<input autoFocus value={typed} onChange={(e) => setTyped(e.target.value)} className="mt-1 block w-full rounded border border-line px-2 py-1" /></label>}<div className="mt-5 flex justify-end gap-2"><Button onClick={close}>Cancel</Button><Button variant="danger" disabled={!allowed || busy} onClick={() => void remove()}>Remove</Button></div></div></div>; }
@@ -109,7 +110,7 @@ function Processes({ running, data, loading }: { running: boolean; data?: Top; l
 /** Containers list: create, edit-in-place, and per-row/bulk lifecycle actions. */
 export function ContainersPage() {
   const queryClient = useQueryClient(); const { push } = useToast();
-  const [q, setQ] = useState(""); const [status, setStatus] = useState("");
+  const [q, setQ] = useState(""); const [status, setStatus] = useState(() => (getPreferences().containerFilter === "running" ? "running" : ""));
   const [creating, setCreating] = useState(false); const [remove, setRemove] = useState<Container | null>(null);
   const [bulkRemove, setBulkRemove] = useState<Container[] | null>(null);
   const [editTarget, setEditTarget] = useState<ContainerDetail | null>(null);

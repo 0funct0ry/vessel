@@ -4,6 +4,7 @@ export { NetworkDetailPage, NetworksPage, VolumeDetailPage, VolumesPage } from "
 export { ContainerDetailPage, ContainersPage } from "./containers";
 export { ImageDetailPage, ImagesPage } from "./images";
 export { StackDetailPage, StacksPage } from "./stacks";
+export { SettingsPage } from "./settings/SettingsPage";
 
 // Placeholder pages for every SPEC §9.1 route. Real content lands in
 // M13 (containers), M14 (logs), M15 (images), M16 (volumes/networks),
@@ -18,10 +19,6 @@ export function WebhooksPage() {
 
 export function WebhookDetailPage() {
   return <EmptyState title="Webhook detail is not built yet" action="Lands in M18." />;
-}
-
-export function SettingsPage() {
-  return <EmptyState title="Settings is not built yet" action="Users, tokens, and about info land in a later milestone." />;
 }
 
 export function NotFoundPage() {
