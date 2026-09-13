@@ -1,0 +1,89 @@
+version: 2
+
+before:
+  hooks:
+    - sh -c "cd web && npm ci && npm run build"
+
+builds:
+  - id: vessel
+    main: .
+    binary: vessel
+    env:
+      - CGO_ENABLED=0
+    tags:
+      - embed
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # windows/amd64 is best-effort (SPEC §12): not exercised by CI, ship as-is.
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/0funct0ry/vessel/internal/version.Version={{.Version}}
+      - -X github.com/0funct0ry/vessel/internal/version.Commit={{.Commit}}
+      - -X github.com/0funct0ry/vessel/internal/version.Date={{.Date}}
+
+archives:
+  - id: vessel
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  groups:
+    - title: Changes
+      order: 0
+  filters:
+    exclude:
+      - "^merge"
+      - "^Merge"
+
+dockers:
+  - id: vessel-amd64
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile
+    image_templates:
+      - "ghcr.io/0funct0ry/vessel:{{ .Version }}-amd64"
+      - "ghcr.io/0funct0ry/vessel:latest-amd64"
+    use: buildx
+    build_flag_templates:
+      - --platform=linux/amd64
+  - id: vessel-arm64
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile
+    image_templates:
+      - "ghcr.io/0funct0ry/vessel:{{ .Version }}-arm64"
+      - "ghcr.io/0funct0ry/vessel:latest-arm64"
+    use: buildx
+    build_flag_templates:
+      - --platform=linux/arm64
+
+docker_manifests:
+  - name_template: "ghcr.io/0funct0ry/vessel:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/0funct0ry/vessel:{{ .Version }}-amd64"
+      - "ghcr.io/0funct0ry/vessel:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/0funct0ry/vessel:latest"
+    image_templates:
+      - "ghcr.io/0funct0ry/vessel:latest-amd64"
+      - "ghcr.io/0funct0ry/vessel:latest-arm64"
+
+release:
+  github:
+    owner: 0funct0ry
+    name: vessel

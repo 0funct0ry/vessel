@@ -1,0 +1,13 @@
+.git
+.idea
+.agents
+.claude
+bin
+vessel.db
+internal-docs
+examples
+web/node_modules
+web/dist
+web-site
+docs
+*.md
