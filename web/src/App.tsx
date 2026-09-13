@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth/AuthProvider";
-import { LoginPage } from "./auth/LoginPage";
+import { AuthEntryPage } from "./auth/AuthEntryPage";
 import { AppShell } from "./components/shell/AppShell";
 import {
   ContainerDetailPage,
@@ -33,7 +33,7 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 export function App() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      <Route path="/login" element={<AuthEntryPage />} />
       <Route
         element={
           <RequireAuth>

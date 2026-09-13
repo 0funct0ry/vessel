@@ -336,6 +336,9 @@ func (s *Store) ListDeliveries(_ context.Context, webhookID string, q store.Deli
 		if q.Cursor != "" && d.ID >= q.Cursor {
 			continue
 		}
+		if q.Status != "" && d.Status != q.Status {
+			continue
+		}
 		out = append(out, d)
 		if len(out) == limit {
 			break

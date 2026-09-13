@@ -70,6 +70,8 @@ func NewRouter(cfg Config) *gin.Engine {
 	v1.GET("/health", handleHealth)
 	v1.GET("/version", s.handleVersion)
 	v1.POST("/auth/login", s.handleLogin)
+	v1.GET("/auth/bootstrap", s.handleBootstrapStatus)
+	v1.POST("/auth/bootstrap", s.handleBootstrap)
 	if s.execOn {
 		// This handler authenticates with the one-time WebSocket ticket rather
 		// than the normal Authorization header middleware.

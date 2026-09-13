@@ -15,10 +15,7 @@ const MAIN: NavItem[] = [
   { to: "/networks", label: "Networks" },
 ];
 
-const ACTIVITY: NavItem[] = [
-  { to: "/events", label: "Events" },
-  { to: "/webhooks", label: "Webhooks" },
-];
+const ACTIVITY: NavItem[] = [{ to: "/events", label: "Events" }];
 
 const HOST: NavItem[] = [{ to: "/settings", label: "Settings" }];
 
@@ -48,6 +45,9 @@ function NavGroup({ label, items }: { label?: string; items: NavItem[] }) {
 
 export function Rail() {
   const { user, logout } = useAuth();
+  // Webhooks are an admin-only egress/SSRF surface (SPEC §7.6) — hide the nav
+  // entry entirely for non-admins rather than showing a disabled link.
+  const activity = user?.role === "admin" ? [...ACTIVITY, { to: "/webhooks", label: "Webhooks" }] : ACTIVITY;
 
   return (
     <nav aria-label="Primary" className="hidden h-full min-h-0 flex-col bg-ink text-railtext md:flex">
@@ -58,7 +58,7 @@ export function Rail() {
 
       <div className="flex-1 overflow-auto px-2 py-2.5">
         <NavGroup items={MAIN} />
-        <NavGroup label="Activity" items={ACTIVITY} />
+        <NavGroup label="Activity" items={activity} />
         <NavGroup label="Host" items={HOST} />
       </div>
 

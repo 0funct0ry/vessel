@@ -88,7 +88,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		storeMode = "sqlite"
 	}
 	defer persistence.Close()
-	authEnabled, impliedAuth, err := effectiveAuth(context.Background(), cfg.Auth, persistence)
+	authEnabled, impliedAuth, userCount, err := effectiveAuth(context.Background(), cfg.Auth, persistence)
 	if err != nil {
 		return err
 	}
@@ -97,6 +97,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	if err := GuardBind(cfg.Addr, authEnabled, cfg.Override); err != nil {
 		return err
+	}
+	if authEnabled && userCount == 0 {
+		fmt.Printf("no users configured — open http://%s:%d/ to create the first admin account\n", cfg.Addr, cfg.Port)
 	}
 	tokens, generated, err := auth.LoadTokens(context.Background(), persistence, cfg.JWTTTL)
 	if err != nil {
@@ -158,12 +161,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func effectiveAuth(ctx context.Context, requested bool, persistence store.Store) (enabled, implied bool, err error) {
+func effectiveAuth(ctx context.Context, requested bool, persistence store.Store) (enabled, implied bool, userCount int, err error) {
 	users, err := persistence.ListUsers(ctx)
 	if err != nil {
-		return false, false, fmt.Errorf("list users: %w", err)
+		return false, false, 0, fmt.Errorf("list users: %w", err)
 	}
-	return requested || len(users) > 0, !requested && len(users) > 0, nil
+	return requested || len(users) > 0, !requested && len(users) > 0, len(users), nil
 }
 
 func printBanner(cfg *Config, authEnabled, generatedSecret bool) {

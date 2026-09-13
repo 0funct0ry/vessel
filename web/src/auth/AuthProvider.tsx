@@ -8,6 +8,7 @@ interface AuthState {
   user: (Partial<User> & { role: Role }) | null;
   capabilities: Capabilities;
   login: (username: string, password: string) => Promise<void>;
+  bootstrap: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -42,6 +43,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const bootstrap = useCallback(
+    async (username: string, password: string) => {
+      const res = await api.post<{ token: string; user: User }>("/auth/bootstrap", { username, password });
+      setToken(res.token);
+      await refresh();
+    },
+    [refresh],
+  );
+
   const logout = useCallback(async () => {
     try {
       await api.post("/auth/logout");
@@ -62,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user: me?.user ?? null,
     capabilities: me?.capabilities ?? {},
     login,
+    bootstrap,
     logout,
     refresh,
   };

@@ -1,13 +1,16 @@
 package webhook
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"testing"
+	"time"
 
 	"github.com/0funct0ry/vessel/internal/dockerapi"
 	"github.com/0funct0ry/vessel/internal/store"
+	"github.com/0funct0ry/vessel/internal/store/memstore"
 )
 
 func TestMatches(t *testing.T) {
@@ -46,5 +49,53 @@ func TestRetryDelays(t *testing.T) {
 		if retryDelay(i).Seconds() != float64(s) {
 			t.Fatalf("retry %d", i)
 		}
+	}
+}
+
+// TestRedeliverCreatesNewDeliveryNotMutation verifies the delivery log stays
+// an append-only audit trail: Redeliver must enqueue a brand-new delivery ID
+// and leave the original terminal delivery row untouched.
+func TestRedeliverCreatesNewDeliveryNotMutation(t *testing.T) {
+	ctx := context.Background()
+	s := memstore.New()
+	w, err := s.CreateWebhook(ctx, store.Webhook{ID: "wh1", Name: "acme", URL: "https://example.com/hook", Enabled: true, EventTypes: []string{"container.*"}, MaxAttempts: 3, CreatedAt: time.Now(), UpdatedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := store.Delivery{
+		ID: "dl_original", WebhookID: w.ID, EventID: "evt1", Payload: []byte(`{"type":"container.start"}`),
+		Attempt: 3, Status: store.DeliveryFailed, CreatedAt: time.Now().Add(-time.Hour),
+	}
+	code := 500
+	original.StatusCode = &code
+	if _, err := s.CreateDelivery(ctx, original); err != nil {
+		t.Fatal(err)
+	}
+
+	e := New(Config{Store: s, QueueSize: 8})
+	newID, err := e.Redeliver(ctx, "dl_original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newID == "" || newID == "dl_original" {
+		t.Fatalf("expected a fresh delivery id, got %q", newID)
+	}
+
+	// The original row must be unchanged.
+	got, err := s.GetDelivery(ctx, "dl_original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != store.DeliveryFailed || got.Attempt != 3 || got.StatusCode == nil || *got.StatusCode != 500 {
+		t.Fatalf("original delivery was mutated: %+v", got)
+	}
+
+	// The new row must exist as a fresh pending attempt.
+	fresh, err := s.GetDelivery(ctx, newID)
+	if err != nil {
+		t.Fatalf("new delivery not found: %v", err)
+	}
+	if fresh.Status != store.DeliveryPending || fresh.Attempt != 1 || fresh.WebhookID != w.ID || fresh.EventID != original.EventID {
+		t.Fatalf("unexpected fresh delivery: %+v", fresh)
 	}
 }

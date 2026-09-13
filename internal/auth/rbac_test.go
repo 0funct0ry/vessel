@@ -57,8 +57,8 @@ func TestAllowsAndCapabilities(t *testing.T) {
 	if !admin["prune.run"] || !admin["images.remove"] {
 		t.Fatalf("admin capabilities = %#v", admin)
 	}
-	if _, exists := admin["webhooks.create"]; exists {
-		t.Fatal("future route leaked into current capabilities")
+	if !admin["webhooks.create"] || !admin["deliveries.redeliver"] {
+		t.Fatalf("webhook capabilities missing: admin=%#v", admin)
 	}
 }
 

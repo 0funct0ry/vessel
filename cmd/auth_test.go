@@ -16,13 +16,13 @@ func TestFirstPersistentUserImpliesAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if enabled, implied, err := effectiveAuth(context.Background(), false, s); err != nil || enabled || implied {
-		t.Fatalf("before user = enabled=%v implied=%v err=%v", enabled, implied, err)
+	if enabled, implied, count, err := effectiveAuth(context.Background(), false, s); err != nil || enabled || implied || count != 0 {
+		t.Fatalf("before user = enabled=%v implied=%v count=%v err=%v", enabled, implied, count, err)
 	}
 	if _, err := s.CreateUser(context.Background(), store.User{Username: "alice", PasswordHash: "hash", Role: store.RoleAdmin, CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	if enabled, implied, err := effectiveAuth(context.Background(), false, s); err != nil || !enabled || !implied {
-		t.Fatalf("after user = enabled=%v implied=%v err=%v", enabled, implied, err)
+	if enabled, implied, count, err := effectiveAuth(context.Background(), false, s); err != nil || !enabled || !implied || count != 1 {
+		t.Fatalf("after user = enabled=%v implied=%v count=%v err=%v", enabled, implied, count, err)
 	}
 }

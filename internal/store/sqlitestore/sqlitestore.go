@@ -485,6 +485,10 @@ func (s *Store) ListDeliveries(ctx context.Context, webhookID string, q store.De
 		where += " AND id<?"
 		args = append(args, q.Cursor)
 	}
+	if q.Status != "" {
+		where += " AND status=?"
+		args = append(args, q.Status)
+	}
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx, "SELECT id,webhook_id,event_id,payload,attempt,status,status_code,response_ms,response_body,error,created_at,next_retry_at FROM deliveries "+where+" ORDER BY created_at DESC,id DESC LIMIT ?", args...)
 	if err != nil {

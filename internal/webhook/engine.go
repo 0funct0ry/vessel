@@ -164,23 +164,28 @@ func (e *Engine) TestWebhook(ctx context.Context, webhookID string) error {
 	return err
 }
 
-// Redeliver resets a terminal delivery and queues it as a new attempt.
-func (e *Engine) Redeliver(ctx context.Context, deliveryID string) error {
+// Redeliver enqueues a fresh delivery attempt for the same event and webhook,
+// leaving the original delivery row untouched so the delivery log stays an
+// append-only audit trail (a webhook can be redelivered many times over).
+func (e *Engine) Redeliver(ctx context.Context, deliveryID string) (string, error) {
 	d, err := e.store.GetDelivery(ctx, deliveryID)
 	if err != nil {
-		return err
+		return "", err
 	}
-	d.Attempt = 1
-	d.Status = store.DeliveryPending
-	d.StatusCode = nil
-	d.ResponseMS = nil
-	d.ResponseBody = nil
-	d.Error = nil
-	d.NextRetryAt = nil
-	if _, err = e.store.UpdateDelivery(ctx, d); err == nil {
-		e.enqueue(job{d.ID})
+	fresh := store.Delivery{
+		ID:        newID("dl_", 12),
+		WebhookID: d.WebhookID,
+		EventID:   d.EventID,
+		Payload:   d.Payload,
+		Attempt:   1,
+		Status:    store.DeliveryPending,
+		CreatedAt: e.now().UTC(),
 	}
-	return err
+	if _, err = e.store.CreateDelivery(ctx, fresh); err != nil {
+		return "", err
+	}
+	e.enqueue(job{fresh.ID})
+	return fresh.ID, nil
 }
 
 // Enqueue never waits for a sender. At capacity it removes the oldest job.

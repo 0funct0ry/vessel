@@ -92,6 +92,7 @@ type Delivery struct {
 type DeliveryQuery struct {
 	Limit  int
 	Cursor string
+	Status DeliveryStatus
 }
 
 type Event struct {

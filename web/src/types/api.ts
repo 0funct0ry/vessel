@@ -14,6 +14,10 @@ export interface MeResponse {
   capabilities: Capabilities;
 }
 
+export interface BootstrapStatus {
+  available: boolean;
+}
+
 export interface VesselUser {
   id: number;
   username: string;
@@ -149,3 +153,38 @@ export interface GraphEdge {
 }
 export interface StackGraphToResponse { nodes: GraphNode[]; edges: GraphEdge[]; warnings: StackWarning[] }
 export interface StackGraphFromResponse { compose_yaml: string }
+
+// M18 webhooks
+export type DeliveryStatus = "pending" | "success" | "failed" | "dead";
+export interface WebhookLastDelivery { status: DeliveryStatus; created_at: string }
+export interface WebhookStats24h { sent: number; failed: number; success_rate: number }
+export interface Webhook {
+  id: string;
+  name: string;
+  url: string;
+  secret_set: boolean;
+  enabled: boolean;
+  event_types: string[];
+  filters?: { name?: string; image?: string; label?: Record<string, string> };
+  headers?: Record<string, string>;
+  max_attempts: number;
+  created_at: string;
+  updated_at: string;
+  webhook_dropped_total: number;
+  last_delivery?: WebhookLastDelivery;
+  stats_24h: WebhookStats24h;
+}
+export interface Delivery {
+  id: string;
+  webhook_id: string;
+  event_id: string;
+  payload: unknown;
+  attempt: number;
+  status: DeliveryStatus;
+  status_code?: number;
+  response_ms?: number;
+  response_body?: string;
+  error?: string;
+  created_at: string;
+  next_retry_at?: string;
+}

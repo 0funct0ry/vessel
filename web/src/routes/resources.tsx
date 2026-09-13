@@ -7,6 +7,7 @@ import { FileBrowser } from "../components/containers/FileBrowser";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Select, type SelectOption } from "../components/ui/Select";
+import { Switch } from "../components/ui/Switch";
 import { Tabs } from "../components/ui/Tabs";
 import { useToast } from "../components/ui/Toast";
 import { api, apiRoot, getToken } from "../lib/api";
@@ -25,15 +26,6 @@ function primaryIP(connection: NetworkConnection) { return connection.ipv4_addre
 async function copyToClipboard(text: string, label: string, push: (msg: string, kind?: "error") => void) {
   try { await navigator.clipboard.writeText(text); push(`Copied ${text.length > 16 ? `${text.slice(0, 12)}…` : text}.`); }
   catch { push(`Could not copy ${label}. Select it and copy manually.`, "error"); }
-}
-
-function Toggle({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return <label className={`mt-3 flex items-center justify-between rounded border border-line px-2.5 py-1.5 text-[13px] ${disabled ? "opacity-45" : ""}`}>
-    <span>{label}</span>
-    <button type="button" role="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)} className={`relative inline-block h-5 w-9 shrink-0 appearance-none rounded-full border-0 p-0 outline-none transition-colors ${checked ? "bg-hull" : "bg-line"} disabled:cursor-not-allowed`}>
-      <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-panel transition-transform ${checked ? "translate-x-4" : "translate-x-0"}`} />
-    </button>
-  </label>;
 }
 
 function Modal({ title, children, close, busy = false }: { title: string; children: React.ReactNode; close: () => void; busy?: boolean }) {
@@ -209,9 +201,9 @@ function CreateNetworkModal({ close, initial }: { close: () => void; initial?: N
         {name && !nameOK && <p className="mb-0 text-[12px] text-fail">Use 1–63 letters, digits, dots, underscores, or hyphens; start with a letter or digit.</p>}
         <label className="mt-3 block text-[13px]">Driver<Select disabled={busy} value={driver} onChange={setDriver} options={NETWORK_DRIVER_OPTIONS} /></label>
         {driver === "custom" && <label className="mt-3 block text-[13px]">Custom driver name<input disabled={busy} value={customDriver} onChange={(e) => setCustomDriver(e.target.value)} placeholder="my-driver" className={inputClass} /></label>}
-        <Toggle label="Internal network" checked={internal} onChange={setInternal} disabled={busy} />
-        <Toggle label="Attachable" checked={attachable} onChange={setAttachable} disabled={busy} />
-        <Toggle label="Enable IPv6" checked={enableIPv6} onChange={setEnableIPv6} disabled={busy} />
+        <Switch label="Internal network" checked={internal} onChange={setInternal} disabled={busy} />
+        <Switch label="Attachable" checked={attachable} onChange={setAttachable} disabled={busy} />
+        <Switch label="Enable IPv6" checked={enableIPv6} onChange={setEnableIPv6} disabled={busy} />
       </div>}
       {tab === "ipam" && <div>
         {ipamDisabled && <p className="mt-4 mb-0 text-[12px] text-muted">host and none networks do not take IPAM configuration.</p>}
