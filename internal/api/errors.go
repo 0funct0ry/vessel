@@ -116,6 +116,9 @@ func Fail(c *gin.Context, err error) {
 			body.Code = "docker_not_found"
 			body.Message = dockerMessage(err)
 		}
+	case errors.Is(err, store.ErrConflict):
+		status = http.StatusConflict
+		body = errorBody{Code: "already_exists", Message: "a record with that name already exists"}
 	case errors.Is(err, dockerapi.ErrConflict):
 		status = http.StatusConflict
 		body = errorBody{Code: "already_in_state", Message: dockerMessage(err), DockerStatus: http.StatusConflict}

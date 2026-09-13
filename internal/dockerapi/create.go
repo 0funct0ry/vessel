@@ -28,8 +28,13 @@ type Spec struct {
 	Network, RestartPolicy string
 	MacAddress             string
 	AdditionalNetworks     []string
-	Labels                 map[string]string
-	Start                  bool
+	// NetworkAliases are extra DNS names for this container on every network
+	// it joins (Network and each of AdditionalNetworks) — Docker's embedded
+	// DNS otherwise only resolves a container by its own name, not by any
+	// caller-meaningful name like a compose service's.
+	NetworkAliases []string
+	Labels         map[string]string
+	Start          bool
 }
 
 type CreateResult struct {
@@ -72,7 +77,8 @@ func (c *Client) CreateContainer(ctx context.Context, spec Spec) (CreateResult, 
 		Name string `json:"Name,omitempty"`
 	}
 	type endpoint struct {
-		MacAddress string `json:"MacAddress,omitempty"`
+		MacAddress string   `json:"MacAddress,omitempty"`
+		Aliases    []string `json:"Aliases,omitempty"`
 	}
 	request := struct {
 		Image            string              `json:"Image"`
@@ -121,10 +127,10 @@ func (c *Client) CreateContainer(ctx context.Context, spec Spec) (CreateResult, 
 	}
 	request.HostConfig.NetworkMode = spec.Network
 	request.HostConfig.RestartPolicy = restart{Name: spec.RestartPolicy}
-	if spec.MacAddress != "" && spec.Network != "" {
+	if spec.Network != "" && (spec.MacAddress != "" || len(spec.NetworkAliases) > 0) {
 		request.NetworkingConfig = &struct {
 			EndpointsConfig map[string]endpoint `json:"EndpointsConfig"`
-		}{EndpointsConfig: map[string]endpoint{spec.Network: {MacAddress: spec.MacAddress}}}
+		}{EndpointsConfig: map[string]endpoint{spec.Network: {MacAddress: spec.MacAddress, Aliases: spec.NetworkAliases}}}
 	}
 	body, err := json.Marshal(request)
 	if err != nil {
@@ -151,7 +157,7 @@ func (c *Client) CreateContainer(ctx context.Context, spec Spec) (CreateResult, 
 		warnings = []string{}
 	}
 	result := CreateResult{ID: wire.ID, Warnings: warnings}
-	result.Warnings = append(result.Warnings, attachAdditionalNetworks(ctx, c, result.ID, spec.AdditionalNetworks)...)
+	result.Warnings = append(result.Warnings, attachAdditionalNetworks(ctx, c, result.ID, spec.AdditionalNetworks, spec.NetworkAliases)...)
 	if spec.Start {
 		if err := c.Lifecycle(ctx, result.ID, "start", nil); err != nil {
 			return result, &StartError{Result: result, Err: err}
@@ -165,13 +171,13 @@ func (c *Client) CreateContainer(ctx context.Context, spec Spec) (CreateResult, 
 // network in NetworkingConfig, so extras are attached with one NetworkConnect
 // call each; a failed attach is reported as a warning, not a fatal error,
 // since the container itself was already created successfully.
-func attachAdditionalNetworks(ctx context.Context, c *Client, containerID string, networks []string) []string {
+func attachAdditionalNetworks(ctx context.Context, c *Client, containerID string, networks, aliases []string) []string {
 	var warnings []string
 	for _, network := range networks {
 		if network == "" {
 			continue
 		}
-		if err := c.NetworkConnect(ctx, network, containerID, false); err != nil {
+		if err := c.NetworkConnectAliased(ctx, network, containerID, aliases); err != nil {
 			warnings = append(warnings, fmt.Sprintf("could not attach to network %s: %v", network, err))
 		}
 	}

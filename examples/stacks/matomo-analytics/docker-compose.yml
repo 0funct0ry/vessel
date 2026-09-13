@@ -1,0 +1,63 @@
+services:
+  web:
+    image: matomo:5-apache
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8082}:80"
+    environment:
+      - MATOMO_DATABASE_HOST=db
+      - MATOMO_DATABASE_ADAPTER=mysql
+      - MATOMO_DATABASE_DBNAME=${MYSQL_DATABASE:-matomo}
+      - MATOMO_DATABASE_USERNAME=${MYSQL_USER:-matomo}
+      - MATOMO_DATABASE_PASSWORD=${MYSQL_PASSWORD:?a database password is required}
+      - MATOMO_GENERAL_SALT=${GENERAL_SALT:?a random salt is required}
+    volumes:
+      - matomo_data:/var/www/html
+    networks:
+      - front
+      - back
+    depends_on:
+      - db
+      - cache
+    labels:
+      com.vessel.example: matomo-analytics
+
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-matomo}
+      - MYSQL_USER=${MYSQL_USER:-matomo}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:?a database password is required}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?a root password is required}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - back
+    labels:
+      com.vessel.example: matomo-analytics
+
+  cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory ${REDIS_MAXMEMORY:-64mb} --maxmemory-policy allkeys-lru
+    volumes:
+      - cache_data:/data
+    networks:
+      - back
+    labels:
+      com.vessel.example: matomo-analytics
+
+networks:
+  front:
+    driver: bridge
+  back:
+    driver: bridge
+
+volumes:
+  matomo_data:
+    driver: local
+  db_data:
+    driver: local
+  cache_data:
+    driver: local

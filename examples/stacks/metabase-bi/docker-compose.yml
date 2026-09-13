@@ -1,0 +1,63 @@
+services:
+  web:
+    image: metabase/metabase:v0.51.4
+    restart: unless-stopped
+    environment:
+      - MB_DB_TYPE=postgres
+      - MB_DB_HOST=db
+      - MB_DB_PORT=5432
+      - MB_DB_DBNAME=${POSTGRES_DB:-metabase}
+      - MB_DB_USER=${POSTGRES_USER:-metabase}
+      - MB_DB_PASS=${POSTGRES_PASSWORD:?a database password is required}
+      - MB_ENCRYPTION_SECRET_KEY=${ENCRYPTION_KEY:?an encryption key is required}
+      - MB_SITE_URL=${SITE_URL:-http://localhost}
+    volumes:
+      - metabase_data:/metabase-data
+    networks:
+      - back
+    depends_on:
+      - db
+    labels:
+      com.vessel.example: metabase-bi
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-metabase}
+      - POSTGRES_USER=${POSTGRES_USER:-metabase}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?a database password is required}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - back
+    labels:
+      com.vessel.example: metabase-bi
+
+  proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8083}:80"
+    environment:
+      - UPSTREAM=web:3000
+      - CLIENT_MAX_BODY=${CLIENT_MAX_BODY:-10m}
+    networks:
+      - front
+      - back
+    depends_on:
+      - web
+    labels:
+      com.vessel.example: metabase-bi
+
+networks:
+  front:
+    driver: bridge
+  back:
+    driver: bridge
+
+volumes:
+  metabase_data:
+    driver: local
+  db_data:
+    driver: local

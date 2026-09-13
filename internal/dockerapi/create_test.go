@@ -51,6 +51,46 @@ func TestCreateContainerBuildsExactDockerRequest(t *testing.T) {
 	}
 }
 
+// A container must be reachable by a caller-meaningful name (a compose
+// service's short name, say), not only by the name Docker gave it — Docker's
+// embedded DNS otherwise only resolves the latter. This must hold with no
+// MacAddress set, since almost nothing sets one.
+func TestCreateContainerSendsNetworkAliasesOnPrimaryAndAdditionalNetworks(t *testing.T) {
+	var createBody any
+	var connectBody any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1.43/containers/create":
+			_ = json.NewDecoder(r.Body).Decode(&createBody)
+			_, _ = io.WriteString(w, `{"Id":"c1"}`)
+		case "/v1.43/networks/extra/connect":
+			_ = json.NewDecoder(r.Body).Decode(&connectBody)
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+	c, err := New("tcp://" + srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CreateContainer(context.Background(), Spec{Image: "alpine:3", Network: "back", AdditionalNetworks: []string{"extra"}, NetworkAliases: []string{"db"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]any{"EndpointsConfig": map[string]any{"back": map[string]any{"Aliases": []any{"db"}}}}
+	body, _ := createBody.(map[string]any)
+	if !reflect.DeepEqual(body["NetworkingConfig"], want) {
+		t.Fatalf("primary network alias: NetworkingConfig = %#v, want %#v", body["NetworkingConfig"], want)
+	}
+
+	connect, _ := connectBody.(map[string]any)
+	endpointConfig, _ := connect["EndpointConfig"].(map[string]any)
+	aliases, _ := endpointConfig["Aliases"].([]any)
+	if len(aliases) != 1 || aliases[0] != "db" {
+		t.Fatalf("additional network alias: EndpointConfig = %#v", connect["EndpointConfig"])
+	}
+}
+
 func TestCreateContainerAdditionalNetworkFailureBecomesWarning(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {

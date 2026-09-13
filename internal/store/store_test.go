@@ -114,6 +114,50 @@ func testStore(t *testing.T, open newStore) {
 		t.Fatalf("cascade delete = %v", err)
 	}
 
+	st, err := s.CreateStack(ctx, store.Stack{ID: "st_one", Name: "acme", ComposeYAML: "services:\n  api:\n    image: alpine:3\n", EnvContent: "TAG=3\n", CreatedAt: now, UpdatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateStack(ctx, store.Stack{ID: "st_two", Name: "acme", CreatedAt: now, UpdatedAt: now}); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("duplicate stack name = %v", err)
+	}
+	if got, err := s.GetStack(ctx, st.ID); err != nil || got.ComposeYAML != st.ComposeYAML || got.EnvContent != "TAG=3\n" {
+		t.Fatalf("get stack = %#v, %v", got, err)
+	}
+	if got, err := s.GetStackByName(ctx, "acme"); err != nil || got.ID != st.ID {
+		t.Fatalf("get stack by name = %#v, %v", got, err)
+	}
+	if _, err := s.GetStackByName(ctx, "missing"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("missing stack = %v", err)
+	}
+	if _, err := s.CreateStack(ctx, store.Stack{ID: "st_two", Name: "beta", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	stacks, err := s.ListStacks(ctx)
+	if err != nil || len(stacks) != 2 || stacks[0].Name != "acme" || stacks[1].Name != "beta" {
+		t.Fatalf("stacks = %#v, %v", stacks, err)
+	}
+	st.ComposeYAML = "services:\n  api:\n    image: alpine:3.20\n"
+	st.UpdatedAt = now.Add(time.Minute)
+	if _, err := s.UpdateStack(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.GetStack(ctx, st.ID); err != nil || got.ComposeYAML != st.ComposeYAML || !got.UpdatedAt.Equal(st.UpdatedAt) {
+		t.Fatalf("updated stack = %#v, %v", got, err)
+	}
+	if _, err := s.UpdateStack(ctx, store.Stack{ID: "st_missing", Name: "gone", CreatedAt: now, UpdatedAt: now}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("update missing stack = %v", err)
+	}
+	if err := s.DeleteStack(ctx, "st_two"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteStack(ctx, "st_two"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("double delete = %v", err)
+	}
+	if _, err := s.CreateStack(ctx, store.Stack{ID: "st_three", Name: "beta", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("name freed by delete: %v", err)
+	}
+
 	e1 := store.Event{ID: "evt_one", Type: "container", Action: "start", SubjectID: "c1", Name: "api", Attrs: []byte(`{"image":"acme/api:1"}`), CreatedAt: now}
 	e2 := store.Event{ID: "evt_two", Type: "image", Action: "pull", SubjectID: "i1", Name: "acme/api:2", Attrs: []byte(`{}`), CreatedAt: now.Add(time.Second)}
 	if _, err := s.CreateEvent(ctx, e1); err != nil {
@@ -169,7 +213,7 @@ func TestSQLiteMigrationAndNewerSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	v, err := s.SchemaVersion(context.Background())
-	if err != nil || v != 2 {
+	if err != nil || v != 3 {
 		t.Fatalf("version = %d, %v", v, err)
 	}
 	_ = s.Close()
@@ -180,7 +224,7 @@ func TestSQLiteMigrationAndNewerSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("UPDATE schema_version SET version=3"); err != nil {
+	if _, err := db.Exec("UPDATE schema_version SET version=4"); err != nil {
 		t.Fatal(err)
 	}
 	_ = db.Close()

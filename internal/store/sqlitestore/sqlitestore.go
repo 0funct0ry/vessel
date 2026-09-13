@@ -15,7 +15,7 @@ import (
 	"github.com/0funct0ry/vessel/internal/store"
 )
 
-const schemaVersion = 2
+const schemaVersion = 3
 
 type Store struct{ db *sql.DB }
 
@@ -63,6 +63,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if v < 2 {
 		if _, err = tx.ExecContext(ctx, store.Migration0002); err != nil {
 			return fmt.Errorf("apply migration 2: %w", err)
+		}
+	}
+	if v < 3 {
+		if _, err = tx.ExecContext(ctx, store.Migration0003); err != nil {
+			return fmt.Errorf("apply migration 3: %w", err)
 		}
 	}
 	return tx.Commit()
@@ -259,6 +264,77 @@ func (s *Store) UpdateWebhook(ctx context.Context, w store.Webhook) (store.Webho
 }
 func (s *Store) DeleteWebhook(ctx context.Context, id string) error {
 	r, err := s.db.ExecContext(ctx, "DELETE FROM webhooks WHERE id=?", id)
+	if err != nil {
+		return dbErr(err)
+	}
+	n, _ := r.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+const stackColumns = "id,name,compose_yaml,env_content,created_at,updated_at"
+
+func scanStack(row interface{ Scan(...any) error }) (store.Stack, error) {
+	var st store.Stack
+	var created, updated string
+	if err := row.Scan(&st.ID, &st.Name, &st.ComposeYAML, &st.EnvContent, &created, &updated); err != nil {
+		return store.Stack{}, dbErr(err)
+	}
+	var e error
+	if st.CreatedAt, e = time.Parse(time.RFC3339Nano, created); e != nil {
+		return store.Stack{}, e
+	}
+	if st.UpdatedAt, e = time.Parse(time.RFC3339Nano, updated); e != nil {
+		return store.Stack{}, e
+	}
+	return st, nil
+}
+func stackArgs(st store.Stack) []any {
+	return []any{st.Name, st.ComposeYAML, st.EnvContent, ts(st.CreatedAt), ts(st.UpdatedAt)}
+}
+func (s *Store) CreateStack(ctx context.Context, st store.Stack) (store.Stack, error) {
+	a := append([]any{st.ID}, stackArgs(st)...)
+	_, err := s.db.ExecContext(ctx, "INSERT INTO stacks("+stackColumns+") VALUES(?,?,?,?,?,?)", a...)
+	return st, dbErr(err)
+}
+func (s *Store) GetStack(ctx context.Context, id string) (store.Stack, error) {
+	return scanStack(s.db.QueryRowContext(ctx, "SELECT "+stackColumns+" FROM stacks WHERE id=?", id))
+}
+func (s *Store) GetStackByName(ctx context.Context, name string) (store.Stack, error) {
+	return scanStack(s.db.QueryRowContext(ctx, "SELECT "+stackColumns+" FROM stacks WHERE name=?", name))
+}
+func (s *Store) ListStacks(ctx context.Context) ([]store.Stack, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT "+stackColumns+" FROM stacks ORDER BY name")
+	if err != nil {
+		return nil, dbErr(err)
+	}
+	defer rows.Close()
+	var out []store.Stack
+	for rows.Next() {
+		st, e := scanStack(rows)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, st)
+	}
+	return out, rows.Err()
+}
+func (s *Store) UpdateStack(ctx context.Context, st store.Stack) (store.Stack, error) {
+	a := append(stackArgs(st), st.ID)
+	r, err := s.db.ExecContext(ctx, "UPDATE stacks SET name=?,compose_yaml=?,env_content=?,created_at=?,updated_at=? WHERE id=?", a...)
+	if err != nil {
+		return store.Stack{}, dbErr(err)
+	}
+	n, _ := r.RowsAffected()
+	if n == 0 {
+		return store.Stack{}, store.ErrNotFound
+	}
+	return st, nil
+}
+func (s *Store) DeleteStack(ctx context.Context, id string) error {
+	r, err := s.db.ExecContext(ctx, "DELETE FROM stacks WHERE id=?", id)
 	if err != nil {
 		return dbErr(err)
 	}

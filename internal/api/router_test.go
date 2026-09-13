@@ -63,6 +63,7 @@ type fakeDockerClient struct {
 	commitOptions  dockerapi.CommitOptions
 	commitResult   dockerapi.CommitResult
 	removeCalls    []string
+	removedIDs     []string
 	renameCalls    [][2]string
 	readFileName   string
 	readFileData   []byte
@@ -177,7 +178,10 @@ func (f *fakeDockerClient) InspectNetwork(context.Context, string) (*dockerapi.N
 
 func (f *fakeDockerClient) Lifecycle(context.Context, string, string, url.Values) error { return f.err }
 func (f *fakeDockerClient) RenameContainer(context.Context, string, string) error       { return f.err }
-func (f *fakeDockerClient) RemoveContainer(context.Context, string, dockerapi.RemoveContainerOptions) error {
+func (f *fakeDockerClient) RemoveContainer(_ context.Context, id string, _ dockerapi.RemoveContainerOptions) error {
+	if f.err == nil {
+		f.removedIDs = append(f.removedIDs, id)
+	}
 	return f.err
 }
 func (f *fakeDockerClient) CreateContainer(_ context.Context, spec dockerapi.Spec) (dockerapi.CreateResult, error) {

@@ -1,0 +1,62 @@
+services:
+  web:
+    image: wordpress:6.6-php8.3-apache
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    environment:
+      - WORDPRESS_DB_HOST=db
+      - WORDPRESS_DB_NAME=${MYSQL_DATABASE:-wordpress}
+      - WORDPRESS_DB_USER=${MYSQL_USER:-wordpress}
+      - WORDPRESS_DB_PASSWORD=${MYSQL_PASSWORD:?a database password is required}
+      - WORDPRESS_TABLE_PREFIX=${TABLE_PREFIX:-wp_}
+    volumes:
+      - wp_content:/var/www/html/wp-content
+    networks:
+      - front
+      - back
+    depends_on:
+      - db
+      - cache
+    labels:
+      com.vessel.example: wordpress
+
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-wordpress}
+      - MYSQL_USER=${MYSQL_USER:-wordpress}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:?a database password is required}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?a root password is required}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - back
+    labels:
+      com.vessel.example: wordpress
+
+  cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory ${REDIS_MAXMEMORY:-64mb} --maxmemory-policy allkeys-lru
+    volumes:
+      - cache_data:/data
+    networks:
+      - back
+    labels:
+      com.vessel.example: wordpress
+
+networks:
+  front:
+    driver: bridge
+  back:
+    driver: bridge
+
+volumes:
+  wp_content:
+    driver: local
+  db_data:
+    driver: local
+  cache_data:
+    driver: local

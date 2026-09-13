@@ -18,12 +18,14 @@ type Store struct {
 	webhooks   map[string]store.Webhook
 	deliveries map[string]store.Delivery
 	byWebhook  map[string][]string
+	stacks     map[string]store.Stack
+	stackNames map[string]string
 	nextUserID int64
 	events     map[string]store.Event
 }
 
 func New() *Store {
-	return &Store{settings: map[string]string{}, users: map[int64]store.User{}, usernames: map[string]int64{}, webhooks: map[string]store.Webhook{}, deliveries: map[string]store.Delivery{}, byWebhook: map[string][]string{}, events: map[string]store.Event{}, nextUserID: 1}
+	return &Store{settings: map[string]string{}, users: map[int64]store.User{}, usernames: map[string]int64{}, webhooks: map[string]store.Webhook{}, deliveries: map[string]store.Delivery{}, byWebhook: map[string][]string{}, events: map[string]store.Event{}, stacks: map[string]store.Stack{}, stackNames: map[string]string{}, nextUserID: 1}
 }
 func (s *Store) Close() error { return nil }
 func (s *Store) GetSetting(_ context.Context, key string) (string, error) {
@@ -159,6 +161,78 @@ func (s *Store) DeleteWebhook(_ context.Context, id string) error {
 	delete(s.byWebhook, id)
 	return nil
 }
+func (s *Store) CreateStack(_ context.Context, st store.Stack) (store.Stack, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.stacks[st.ID]; ok {
+		return store.Stack{}, store.ErrConflict
+	}
+	if _, ok := s.stackNames[st.Name]; ok {
+		return store.Stack{}, store.ErrConflict
+	}
+	s.stacks[st.ID] = st
+	s.stackNames[st.Name] = st.ID
+	return st, nil
+}
+func (s *Store) GetStack(_ context.Context, id string) (store.Stack, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	st, ok := s.stacks[id]
+	if !ok {
+		return store.Stack{}, store.ErrNotFound
+	}
+	return st, nil
+}
+func (s *Store) GetStackByName(_ context.Context, name string) (store.Stack, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	id, ok := s.stackNames[name]
+	if !ok {
+		return store.Stack{}, store.ErrNotFound
+	}
+	return s.stacks[id], nil
+}
+
+// ListStacks is sorted by name so the stacks list has a stable order.
+func (s *Store) ListStacks(_ context.Context) ([]store.Stack, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]store.Stack, 0, len(s.stacks))
+	for _, st := range s.stacks {
+		out = append(out, st)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+func (s *Store) UpdateStack(_ context.Context, st store.Stack) (store.Stack, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old, ok := s.stacks[st.ID]
+	if !ok {
+		return store.Stack{}, store.ErrNotFound
+	}
+	if st.Name != old.Name {
+		if id, exists := s.stackNames[st.Name]; exists && id != st.ID {
+			return store.Stack{}, store.ErrConflict
+		}
+		delete(s.stackNames, old.Name)
+		s.stackNames[st.Name] = st.ID
+	}
+	s.stacks[st.ID] = st
+	return st, nil
+}
+func (s *Store) DeleteStack(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, ok := s.stacks[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	delete(s.stacks, id)
+	delete(s.stackNames, st.Name)
+	return nil
+}
+
 func (s *Store) CreateDelivery(_ context.Context, d store.Delivery) (store.Delivery, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

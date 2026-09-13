@@ -13,6 +13,8 @@ import {
   NetworksPage,
   NotFoundPage,
   SettingsPage,
+  StackDetailPage,
+  StacksPage,
   VolumeDetailPage,
   VolumesPage,
   WebhookDetailPage,
@@ -42,6 +44,8 @@ export function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/containers" element={<ContainersPage />} />
         <Route path="/containers/:id" element={<ContainerDetailPage />} />
+        <Route path="/stacks" element={<StacksPage />} />
+        <Route path="/stacks/:name" element={<StackDetailPage />} />
         <Route path="/images" element={<ImagesPage />} />
         <Route path="/images/:id" element={<ImageDetailPage />} />
         <Route path="/volumes" element={<VolumesPage />} />

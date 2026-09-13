@@ -52,6 +52,18 @@ type Webhook struct {
 	UpdatedAt   time.Time
 }
 
+// Stack is a stored Compose stack definition. Vessel keeps only the source of
+// truth (the compose file and its .env); everything else about a stack —
+// status, containers, services — is derived live from Docker.
+type Stack struct {
+	ID          string
+	Name        string
+	ComposeYAML string
+	EnvContent  string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
 type Delivery struct {
 	ID           string
 	WebhookID    string
@@ -105,6 +117,13 @@ type Store interface {
 	ListWebhooks(context.Context) ([]Webhook, error)
 	UpdateWebhook(context.Context, Webhook) (Webhook, error)
 	DeleteWebhook(context.Context, string) error
+
+	CreateStack(context.Context, Stack) (Stack, error)
+	GetStack(context.Context, string) (Stack, error)
+	GetStackByName(context.Context, string) (Stack, error)
+	ListStacks(context.Context) ([]Stack, error)
+	UpdateStack(context.Context, Stack) (Stack, error)
+	DeleteStack(context.Context, string) error
 
 	CreateDelivery(context.Context, Delivery) (Delivery, error)
 	GetDelivery(context.Context, string) (Delivery, error)

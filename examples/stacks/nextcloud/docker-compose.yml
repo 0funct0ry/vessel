@@ -1,0 +1,64 @@
+services:
+  app:
+    image: nextcloud:29-apache
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8081}:80"
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=${POSTGRES_DB:-nextcloud}
+      - POSTGRES_USER=${POSTGRES_USER:-nextcloud}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?a database password is required}
+      - REDIS_HOST=cache
+      - NEXTCLOUD_ADMIN_USER=${ADMIN_USER:-admin}
+      - NEXTCLOUD_ADMIN_PASSWORD=${ADMIN_PASSWORD:?an admin password is required}
+      - NEXTCLOUD_TRUSTED_DOMAINS=${TRUSTED_DOMAINS:-localhost}
+    volumes:
+      - nextcloud_data:/var/www/html
+    networks:
+      - front
+      - back
+    depends_on:
+      - db
+      - cache
+    labels:
+      com.vessel.example: nextcloud
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-nextcloud}
+      - POSTGRES_USER=${POSTGRES_USER:-nextcloud}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?a database password is required}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - back
+    labels:
+      com.vessel.example: nextcloud
+
+  cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-}
+    volumes:
+      - cache_data:/data
+    networks:
+      - back
+    labels:
+      com.vessel.example: nextcloud
+
+networks:
+  front:
+    driver: bridge
+  back:
+    driver: bridge
+
+volumes:
+  nextcloud_data:
+    driver: local
+  db_data:
+    driver: local
+  cache_data:
+    driver: local

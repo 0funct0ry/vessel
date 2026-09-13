@@ -1,0 +1,63 @@
+services:
+  ghost:
+    image: ghost:5-alpine
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-2368}:2368"
+    environment:
+      - url=${SITE_URL:-http://localhost:2368}
+      - database__client=mysql
+      - database__connection__host=db
+      - database__connection__user=${MYSQL_USER:-ghost}
+      - database__connection__password=${MYSQL_PASSWORD:?a database password is required}
+      - database__connection__database=${MYSQL_DATABASE:-ghost}
+      - mail__transport=${MAIL_TRANSPORT:-Direct}
+    volumes:
+      - ghost_content:/var/lib/ghost/content
+    networks:
+      - front
+      - back
+    depends_on:
+      - db
+    labels:
+      com.vessel.example: ghost-blog
+
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-ghost}
+      - MYSQL_USER=${MYSQL_USER:-ghost}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:?a database password is required}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?a root password is required}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - back
+    labels:
+      com.vessel.example: ghost-blog
+
+  cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - cache_data:/data
+    networks:
+      - back
+    labels:
+      com.vessel.example: ghost-blog
+
+networks:
+  front:
+    driver: bridge
+  back:
+    driver: bridge
+
+volumes:
+  ghost_content:
+    driver: local
+  db_data:
+    driver: local
+  cache_data:
+    driver: local

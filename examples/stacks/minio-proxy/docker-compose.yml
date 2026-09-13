@@ -1,0 +1,58 @@
+services:
+  minio:
+    image: minio/minio:RELEASE.2024-08-03T04-33-23Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:?a root password is required}
+      - MINIO_REGION=${MINIO_REGION:-us-east-1}
+      - MINIO_BROWSER_REDIRECT_URL=${CONSOLE_URL:-}
+    volumes:
+      - minio_data:/data
+    networks:
+      - back
+    labels:
+      com.vessel.example: minio-proxy
+
+  cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory ${REDIS_MAXMEMORY:-32mb} --maxmemory-policy allkeys-lru
+    volumes:
+      - cache_data:/data
+    networks:
+      - back
+    labels:
+      com.vessel.example: minio-proxy
+
+  web:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-9000}:9000"
+      - "${CONSOLE_PORT:-9001}:9001"
+    environment:
+      - MINIO_UPSTREAM=minio:9000
+      - CONSOLE_UPSTREAM=minio:9001
+      - RATE_LIMIT=${RATE_LIMIT:-10r/s}
+    networks:
+      - front
+      - back
+    depends_on:
+      - minio
+      - cache
+    labels:
+      com.vessel.example: minio-proxy
+
+networks:
+  front:
+    driver: bridge
+  back:
+    driver: bridge
+
+volumes:
+  minio_data:
+    driver: local
+  cache_data:
+    driver: local

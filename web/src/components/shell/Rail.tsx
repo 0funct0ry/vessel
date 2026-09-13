@@ -9,6 +9,7 @@ interface NavItem {
 const MAIN: NavItem[] = [
   { to: "/", label: "Dashboard" },
   { to: "/containers", label: "Containers" },
+  { to: "/stacks", label: "Stacks" },
   { to: "/images", label: "Images" },
   { to: "/volumes", label: "Volumes" },
   { to: "/networks", label: "Networks" },

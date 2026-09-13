@@ -76,6 +76,15 @@ var protectedRoutes = []protectedRoute{
 	{http.MethodDelete, "/api/v1/networks/n1", "", store.RoleOperator},
 	{http.MethodPost, "/api/v1/networks/n1/connect", `{"container":"c1"}`, store.RoleOperator},
 	{http.MethodPost, "/api/v1/networks/n1/disconnect", `{"container":"c1"}`, store.RoleOperator},
+	{http.MethodGet, "/api/v1/stacks", "", store.RoleViewer},
+	{http.MethodPost, "/api/v1/stacks", `{"name":"acme","compose_yaml":"services:\n  api:\n    image: alpine:3\n"}`, store.RoleOperator},
+	{http.MethodGet, "/api/v1/stacks/acme", "", store.RoleViewer},
+	{http.MethodPut, "/api/v1/stacks/acme", `{"compose_yaml":"services:\n  api:\n    image: alpine:3\n"}`, store.RoleOperator},
+	{http.MethodDelete, "/api/v1/stacks/acme", "", store.RoleOperator},
+	{http.MethodGet, "/api/v1/stacks/acme/logs", "", store.RoleViewer},
+	{http.MethodPost, "/api/v1/stacks/acme/up", "", store.RoleOperator},
+	{http.MethodPost, "/api/v1/stacks/acme/down", "", store.RoleOperator},
+	{http.MethodPost, "/api/v1/stacks/acme/redeploy", "", store.RoleOperator},
 	{http.MethodPost, "/api/v1/prune/images", "", store.RoleAdmin},
 }
 

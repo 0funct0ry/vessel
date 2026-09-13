@@ -63,3 +63,9 @@ export interface LogLine { ts?: string; stream: "stdout" | "stderr" | "vessel"; 
 export interface DockerEvent { event_id?: string; type: "container" | "image" | "volume" | "network" | string; action: string; id: string; name?: string; attrs: Record<string, string>; timestamp: string }
 export interface ContainerFileEntry { name: string; path: string; type: "file" | "dir" | "symlink"; size: number; mode: string; modified_at: string }
 export interface ContainerFileView { name: string; size: number; mime: string; kind: "text" | "image" | "binary"; content?: string }
+export interface StackWarning { kind: string; message: string }
+export interface StackService { name: string; image: string; container_id?: string; container_name?: string; state: string; status?: string }
+export type StackStatus = "running" | "stopped" | "partial" | "not_deployed";
+export interface Stack { id: string; name: string; source: string; compose_yaml: string; env_content: string; status: StackStatus; service_count: number; container_count: number; services: StackService[]; warnings: StackWarning[]; parse_error?: string; created_at: string; updated_at: string }
+export interface StackEvent { kind: string; name: string; phase: string; detail: string }
+export interface StackLogLine { service: string; stream: string; ts?: string; line: string }

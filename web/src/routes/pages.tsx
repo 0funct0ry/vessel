@@ -3,6 +3,7 @@ import { DashboardPage, EventsPage } from "./dashboard";
 export { NetworkDetailPage, NetworksPage, VolumeDetailPage, VolumesPage } from "./resources";
 export { ContainerDetailPage, ContainersPage } from "./containers";
 export { ImageDetailPage, ImagesPage } from "./images";
+export { StackDetailPage, StacksPage } from "./stacks";
 
 // Placeholder pages for every SPEC §9.1 route. Real content lands in
 // M13 (containers), M14 (logs), M15 (images), M16 (volumes/networks),

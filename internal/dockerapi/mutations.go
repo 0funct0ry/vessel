@@ -248,6 +248,28 @@ func (c *Client) NetworkConnect(ctx context.Context, id, container string, disco
 	return resp.Body.Close()
 }
 
+// NetworkConnectAliased is NetworkConnect plus DNS aliases for the container
+// on this network — used for a compose service's non-primary networks, so it
+// resolves by service name there too, not only on its primary network.
+func (c *Client) NetworkConnectAliased(ctx context.Context, id, container string, aliases []string) error {
+	body, err := json.Marshal(struct {
+		Container      string `json:"Container"`
+		EndpointConfig struct {
+			Aliases []string `json:"Aliases,omitempty"`
+		} `json:"EndpointConfig"`
+	}{Container: container, EndpointConfig: struct {
+		Aliases []string `json:"Aliases,omitempty"`
+	}{Aliases: aliases}})
+	if err != nil {
+		return err
+	}
+	resp, err := c.do(ctx, http.MethodPost, "/networks/"+url.PathEscape(id)+"/connect", body)
+	if err != nil {
+		return err
+	}
+	return resp.Body.Close()
+}
+
 // PruneReport retains Docker's returned deletion list and reclaimed byte count.
 type PruneReport struct {
 	Deleted        []string        `json:"deleted"`

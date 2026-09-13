@@ -1,0 +1,52 @@
+services:
+  web:
+    image: grafana/grafana:11.1.0
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-3001}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${ADMIN_PASSWORD:?an admin password is required}
+      - GF_USERS_ALLOW_SIGN_UP=${ALLOW_SIGN_UP:-false}
+      - GF_INSTALL_PLUGINS=${GF_PLUGINS:-}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+    labels:
+      com.vessel.example: monitoring
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    restart: unless-stopped
+    command: --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.retention.time=${RETENTION:-15d}
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - prometheus_data:/prometheus
+    networks:
+      - monitoring
+    depends_on:
+      - node-exporter
+    labels:
+      com.vessel.example: monitoring
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    restart: unless-stopped
+    networks:
+      - monitoring
+    labels:
+      com.vessel.example: monitoring
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  grafana_data:
+    driver: local
+  prometheus_data:
+    driver: local

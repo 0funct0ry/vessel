@@ -1,0 +1,55 @@
+services:
+  web:
+    image: rocket.chat:6.10
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-3002}:3000"
+    environment:
+      - MONGO_URL=mongodb://db:27017/${MONGO_DB:-rocketchat}?replicaSet=rs0
+      - MONGO_OPLOG_URL=mongodb://db:27017/local?replicaSet=rs0
+      - ROOT_URL=${ROOT_URL:-http://localhost:3002}
+      - PORT=3000
+      - DEPLOY_METHOD=${DEPLOY_METHOD:-docker}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASS=${ADMIN_PASS:?an admin password is required}
+    networks:
+      - back
+    depends_on:
+      - db
+      - cache
+    labels:
+      com.vessel.example: rocketchat
+
+  db:
+    image: mongo:7
+    restart: unless-stopped
+    command: --replSet rs0 --oplogSize ${OPLOG_SIZE:-128}
+    environment:
+      - MONGO_INITDB_DATABASE=${MONGO_DB:-rocketchat}
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - back
+    labels:
+      com.vessel.example: rocketchat
+
+  cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory ${REDIS_MAXMEMORY:-256mb}
+    volumes:
+      - cache_data:/data
+    networks:
+      - back
+    labels:
+      com.vessel.example: rocketchat
+
+networks:
+  back:
+    driver: bridge
+
+volumes:
+  mongo_data:
+    driver: local
+  cache_data:
+    driver: local
