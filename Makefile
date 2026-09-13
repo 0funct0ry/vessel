@@ -1,4 +1,4 @@
-.PHONY: dev build test lint fmt clean web-build
+.PHONY: dev build test lint fmt clean web-build check-bundle-size check-standalone
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -15,7 +15,15 @@ web-build:
 	cd web && npm ci && npm run build
 
 build: web-build
+	./scripts/check-bundle-size.sh
 	CGO_ENABLED=0 go build -tags embed -ldflags "$(LDFLAGS)" -o bin/vessel .
+	./scripts/check-standalone.sh
+
+check-bundle-size:
+	./scripts/check-bundle-size.sh
+
+check-standalone:
+	./scripts/check-standalone.sh
 
 test:
 	go test ./...
