@@ -138,6 +138,8 @@ func NewRouter(cfg Config) *gin.Engine {
 	v1.POST("/networks/:id/disconnect", s.handleNetworkDisconnect)
 	v1.GET("/stacks", s.handleStacks)
 	v1.POST("/stacks", s.handleStackCreate)
+	v1.POST("/stacks/graph/to", s.handleStackGraphTo)
+	v1.POST("/stacks/graph/from", s.handleStackGraphFrom)
 	v1.GET("/stacks/:name", s.handleStack)
 	v1.PUT("/stacks/:name", s.handleStackUpdate)
 	v1.DELETE("/stacks/:name", s.handleStackDelete)

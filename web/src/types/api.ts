@@ -69,3 +69,57 @@ export type StackStatus = "running" | "stopped" | "partial" | "not_deployed";
 export interface Stack { id: string; name: string; source: string; compose_yaml: string; env_content: string; status: StackStatus; service_count: number; container_count: number; services: StackService[]; warnings: StackWarning[]; parse_error?: string; created_at: string; updated_at: string }
 export interface StackEvent { kind: string; name: string; phase: string; detail: string }
 export interface StackLogLine { service: string; stream: string; ts?: string; line: string }
+
+// M17.6.1 Graph tab: the compose<->graph translation internal/compose/graph.go
+// implements. A GraphService/GraphNetwork/GraphVolume mirrors the matching Go
+// struct exactly (view types only, per SPEC's stable-vocabulary rule).
+export interface GraphService {
+  image: string;
+  command?: string;
+  entrypoint?: string;
+  env?: Record<string, string>;
+  ports?: string[];
+  volumes?: string[];
+  networks?: string[];
+  restart?: string;
+  labels?: Record<string, string>;
+  depends_on?: string[];
+}
+export interface GraphNetworkDef {
+  driver?: string;
+  external?: boolean;
+  name?: string;
+  labels?: Record<string, string>;
+  ipam_subnet?: string;
+  ipam_gateway?: string;
+  internal?: boolean;
+  attachable?: boolean;
+  driver_opts?: Record<string, string>;
+}
+export interface GraphVolumeDef {
+  driver?: string;
+  external?: boolean;
+  name?: string;
+  labels?: Record<string, string>;
+  driver_opts?: Record<string, string>;
+}
+export type GraphNodeKind = "service" | "network" | "volume";
+export interface GraphNode {
+  id: string;
+  kind: GraphNodeKind;
+  name: string;
+  service?: GraphService;
+  network?: GraphNetworkDef;
+  volume?: GraphVolumeDef;
+}
+export type GraphEdgeKind = "dependency" | "network" | "mount";
+export interface GraphEdge {
+  id: string;
+  kind: GraphEdgeKind;
+  from: string;
+  to: string;
+  mount_path?: string;
+  read_only?: boolean;
+}
+export interface StackGraphToResponse { nodes: GraphNode[]; edges: GraphEdge[]; warnings: StackWarning[] }
+export interface StackGraphFromResponse { compose_yaml: string }

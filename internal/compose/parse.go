@@ -21,6 +21,32 @@ var variableRE = regexp.MustCompile(`\$(\$|\{[^{}]*\}|[A-Za-z_][A-Za-z0-9_]*)`)
 // env. It returns the decoded document, any non-fatal findings, and an error
 // only when the YAML itself is unusable.
 func ParseCompose(yamlBytes []byte, env map[string]string) (Compose, []Warning, error) {
+	return parseCompose(yamlBytes, env, true)
+}
+
+// ParseComposeStructure decodes a compose file exactly like ParseCompose
+// (same warnings, same Service/NetworkDef/VolumeDef/Raw shapes) but leaves
+// every ${...} span as an opaque literal instead of interpolating it. This is
+// what the Graph tab parses and re-serializes through, so a stored
+// ${VAR:-default}/${VAR:?msg} reference survives a graph-only edit instead of
+// being permanently baked into a resolved value.
+func ParseComposeStructure(yamlBytes []byte) (Compose, []Warning, error) {
+	return parseCompose(yamlBytes, nil, false)
+}
+
+// ParseComposeStructureNode is ParseComposeStructure plus the raw parsed
+// *yaml.Node document tree, for callers that need to patch the file back
+// in place (Compose.Patch) rather than re-encode it from scratch.
+func ParseComposeStructureNode(yamlBytes []byte) (*yaml.Node, Compose, []Warning, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(yamlBytes, &root); err != nil {
+		return nil, Compose{}, nil, fmt.Errorf("compose: %w", err)
+	}
+	c, warnings, err := ParseComposeStructure(yamlBytes)
+	return &root, c, warnings, err
+}
+
+func parseCompose(yamlBytes []byte, env map[string]string, interpolate bool) (Compose, []Warning, error) {
 	var doc map[string]any
 	if err := yaml.Unmarshal(yamlBytes, &doc); err != nil {
 		return Compose{}, nil, fmt.Errorf("compose: %w", err)
@@ -34,9 +60,11 @@ func ParseCompose(yamlBytes []byte, env map[string]string) (Compose, []Warning, 
 		warnings = append(warnings, Warning{WarnObsoleteVersion, "the top-level `version:` key is obsolete and is ignored"})
 	}
 
-	interpolated, varWarnings := interpolateValue(doc, env)
-	warnings = append(warnings, varWarnings...)
-	doc, _ = interpolated.(map[string]any)
+	if interpolate {
+		interpolated, varWarnings := interpolateValue(doc, env)
+		warnings = append(warnings, varWarnings...)
+		doc, _ = interpolated.(map[string]any)
+	}
 
 	rawServices, ok := doc["services"].(map[string]any)
 	if !ok || len(rawServices) == 0 {
@@ -53,10 +81,27 @@ func ParseCompose(yamlBytes []byte, env map[string]string) (Compose, []Warning, 
 		out.Services[name] = decodeService(mapping)
 	}
 	for name, raw := range mappingOf(doc["networks"]) {
-		out.Networks[name] = NetworkDef{Driver: str(valueOf(raw, "driver")), External: truthy(valueOf(raw, "external")), Name: str(valueOf(raw, "name")), Labels: stringMap(valueOf(raw, "labels"))}
+		subnet, gateway := ipamConfig(valueOf(raw, "ipam"))
+		out.Networks[name] = NetworkDef{
+			Driver:      str(valueOf(raw, "driver")),
+			External:    truthy(valueOf(raw, "external")),
+			Name:        str(valueOf(raw, "name")),
+			Labels:      stringMap(valueOf(raw, "labels")),
+			IPAMSubnet:  subnet,
+			IPAMGateway: gateway,
+			Internal:    truthy(valueOf(raw, "internal")),
+			Attachable:  truthy(valueOf(raw, "attachable")),
+			DriverOpts:  stringMap(valueOf(raw, "driver_opts")),
+		}
 	}
 	for name, raw := range mappingOf(doc["volumes"]) {
-		out.Volumes[name] = VolumeDef{Driver: str(valueOf(raw, "driver")), External: truthy(valueOf(raw, "external")), Name: str(valueOf(raw, "name")), Labels: stringMap(valueOf(raw, "labels"))}
+		out.Volumes[name] = VolumeDef{
+			Driver:     str(valueOf(raw, "driver")),
+			External:   truthy(valueOf(raw, "external")),
+			Name:       str(valueOf(raw, "name")),
+			Labels:     stringMap(valueOf(raw, "labels")),
+			DriverOpts: stringMap(valueOf(raw, "driver_opts")),
+		}
 	}
 
 	// depends_on targets must name a service in the same file.
@@ -238,6 +283,24 @@ func truthy(value any) bool {
 	default:
 		return false
 	}
+}
+
+// ipamConfig returns the subnet/gateway of ipam.config[0] only, matching the
+// "small typed surface" precedent the rest of this package already sets.
+func ipamConfig(value any) (subnet, gateway string) {
+	mapping, ok := value.(map[string]any)
+	if !ok {
+		return "", ""
+	}
+	list, ok := mapping["config"].([]any)
+	if !ok || len(list) == 0 {
+		return "", ""
+	}
+	first, ok := list[0].(map[string]any)
+	if !ok {
+		return "", ""
+	}
+	return str(first["subnet"]), str(first["gateway"])
 }
 
 func valueOf(value any, key string) any {

@@ -25,18 +25,24 @@ type Service struct {
 
 // NetworkDef is one entry under the top-level `networks` key.
 type NetworkDef struct {
-	Driver   string            `json:"driver,omitempty"`
-	External bool              `json:"external,omitempty"`
-	Name     string            `json:"name,omitempty"`
-	Labels   map[string]string `json:"labels,omitempty"`
+	Driver      string            `json:"driver,omitempty"`
+	External    bool              `json:"external,omitempty"`
+	Name        string            `json:"name,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	IPAMSubnet  string            `json:"ipam_subnet,omitempty"`
+	IPAMGateway string            `json:"ipam_gateway,omitempty"`
+	Internal    bool              `json:"internal,omitempty"`
+	Attachable  bool              `json:"attachable,omitempty"`
+	DriverOpts  map[string]string `json:"driver_opts,omitempty"`
 }
 
 // VolumeDef is one entry under the top-level `volumes` key.
 type VolumeDef struct {
-	Driver   string            `json:"driver,omitempty"`
-	External bool              `json:"external,omitempty"`
-	Name     string            `json:"name,omitempty"`
-	Labels   map[string]string `json:"labels,omitempty"`
+	Driver     string            `json:"driver,omitempty"`
+	External   bool              `json:"external,omitempty"`
+	Name       string            `json:"name,omitempty"`
+	Labels     map[string]string `json:"labels,omitempty"`
+	DriverOpts map[string]string `json:"driver_opts,omitempty"`
 }
 
 // Compose is the parsed compose file.

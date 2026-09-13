@@ -192,6 +192,140 @@ func validateStack(in stackInput) error {
 	return nil
 }
 
+type graphNode struct {
+	ID      string              `json:"id"`
+	Kind    string              `json:"kind"`
+	Name    string              `json:"name"`
+	Service *compose.Service    `json:"service,omitempty"`
+	Network *compose.NetworkDef `json:"network,omitempty"`
+	Volume  *compose.VolumeDef  `json:"volume,omitempty"`
+}
+
+type graphEdge struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	From      string `json:"from"`
+	To        string `json:"to"`
+	MountPath string `json:"mount_path,omitempty"`
+	ReadOnly  bool   `json:"read_only,omitempty"`
+}
+
+func graphNodesOf(nodes []compose.Node) []graphNode {
+	out := make([]graphNode, len(nodes))
+	for i, n := range nodes {
+		out[i] = graphNode{ID: n.ID, Kind: n.Kind, Name: n.Name, Service: n.Service, Network: n.Network, Volume: n.Volume}
+	}
+	return out
+}
+
+func graphEdgesOf(edges []compose.Edge) []graphEdge {
+	out := make([]graphEdge, len(edges))
+	for i, e := range edges {
+		out[i] = graphEdge{ID: e.ID, Kind: e.Kind, From: e.From, To: e.To, MountPath: e.MountPath, ReadOnly: e.ReadOnly}
+	}
+	return out
+}
+
+func composeNodesOf(nodes []graphNode) []compose.Node {
+	out := make([]compose.Node, len(nodes))
+	for i, n := range nodes {
+		out[i] = compose.Node{ID: n.ID, Kind: n.Kind, Name: n.Name, Service: n.Service, Network: n.Network, Volume: n.Volume}
+	}
+	return out
+}
+
+func composeEdgesOf(edges []graphEdge) []compose.Edge {
+	out := make([]compose.Edge, len(edges))
+	for i, e := range edges {
+		out[i] = compose.Edge{ID: e.ID, Kind: e.Kind, From: e.From, To: e.To, MountPath: e.MountPath, ReadOnly: e.ReadOnly}
+	}
+	return out
+}
+
+type stackGraphToInput struct {
+	ComposeYAML string `json:"compose_yaml"`
+}
+
+type stackGraphToView struct {
+	Nodes    []graphNode       `json:"nodes"`
+	Edges    []graphEdge       `json:"edges"`
+	Warnings []compose.Warning `json:"warnings"`
+}
+
+// handleStackGraphTo parses compose YAML structurally (no ${VAR} resolution,
+// so it doesn't destroy variable references) and returns the Graph tab's
+// node/edge representation.
+func (s *server) handleStackGraphTo(c *gin.Context) {
+	var in stackGraphToInput
+	if err := decodeBody(c, &in); err != nil {
+		Fail(c, err)
+		return
+	}
+	if strings.TrimSpace(in.ComposeYAML) == "" {
+		Fail(c, invalidInput("compose_yaml is required"))
+		return
+	}
+	file, warnings, err := compose.ParseComposeStructure([]byte(in.ComposeYAML))
+	if err != nil {
+		Fail(c, invalidInput("%s", err.Error()))
+		return
+	}
+	nodes, edges := compose.ToGraph(file)
+	if warnings == nil {
+		warnings = []compose.Warning{}
+	}
+	c.JSON(http.StatusOK, stackGraphToView{Nodes: graphNodesOf(nodes), Edges: graphEdgesOf(edges), Warnings: warnings})
+}
+
+type stackGraphFromInput struct {
+	Nodes []graphNode `json:"nodes"`
+	Edges []graphEdge `json:"edges"`
+	// PreviousComposeYAML is the compose file the Graph tab was showing
+	// before this edit (the frontend already holds it in state, so this is
+	// free to supply). When present and still parseable, the edit is
+	// patched onto that document in place (Compose.Patch) so untouched
+	// keys keep their original order and formatting; a graph-edit-in-
+	// progress reformat is limited to only what actually changed. Falls
+	// back to a full Marshal when omitted (a brand-new stack has no prior
+	// document to patch against) or when it fails to parse.
+	PreviousComposeYAML string `json:"previous_compose_yaml,omitempty"`
+}
+
+type stackGraphFromView struct {
+	ComposeYAML string `json:"compose_yaml"`
+}
+
+// handleStackGraphFrom rebuilds compose YAML from a Graph tab edit.
+func (s *server) handleStackGraphFrom(c *gin.Context) {
+	var in stackGraphFromInput
+	if err := decodeBody(c, &in); err != nil {
+		Fail(c, err)
+		return
+	}
+	file, err := compose.FromGraph(composeNodesOf(in.Nodes), composeEdgesOf(in.Edges))
+	if err != nil {
+		Fail(c, invalidInput("%s", err.Error()))
+		return
+	}
+
+	var out []byte
+	if strings.TrimSpace(in.PreviousComposeYAML) != "" {
+		if root, _, _, parseErr := compose.ParseComposeStructureNode([]byte(in.PreviousComposeYAML)); parseErr == nil {
+			if patched, patchErr := file.Patch(root); patchErr == nil {
+				out = patched
+			}
+		}
+	}
+	if out == nil {
+		out, err = file.Marshal()
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+	}
+	c.JSON(http.StatusOK, stackGraphFromView{ComposeYAML: string(out)})
+}
+
 func (s *server) handleStackCreate(c *gin.Context) {
 	var in stackInput
 	if err := decodeBody(c, &in); err != nil {

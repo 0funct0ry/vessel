@@ -7,9 +7,12 @@ import { Copy, Eye, FolderOpen, Layers, Pencil, Play, Plus, RotateCw, ScrollText
 import { Can } from "../auth/Can";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
+import { Modal } from "../components/ui/Modal";
 import { useToast } from "../components/ui/Toast";
+import { EnvVarRow, type EnvRow } from "../components/EnvVarRow";
+import { StackGraph } from "./stackGraph";
 import { api } from "../lib/api";
-import { detectVariables, parseEnvContent, serializeEnvContent, type DetectedVar } from "../lib/composeVars";
+import { detectVariables, parseEnvContent, serializeEnvContent } from "../lib/composeVars";
 import { streamSSE } from "../lib/pullStream";
 import { useSSE } from "../lib/sse";
 import type { Stack, StackEvent, StackLogLine, StackStatus, StackWarning } from "../types/api";
@@ -19,15 +22,6 @@ const iconAction = "rounded p-1 text-muted hover:bg-paper hover:text-text disabl
 const dangerIconAction = `${iconAction} hover:bg-fail/10 hover:text-fail`;
 const stackName = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/;
 const headerIconBtn = "rounded p-1.5 text-muted hover:bg-paper hover:text-text";
-
-type EnvRow = { key: string; value: string; custom?: boolean };
-
-const VAR_KIND_STYLE: Record<DetectedVar["kind"], string> = {
-  required: "border-[#BFD5CE] text-run",
-  optional: "border-line text-muted",
-  error: "border-fail/40 text-fail",
-};
-const VAR_KIND_LABEL: Record<DetectedVar["kind"], string> = { required: "required", optional: "optional", error: "required w/ error" };
 
 const STARTER_COMPOSE = `services:
   web:
@@ -45,23 +39,6 @@ const STATUS_STYLE: Record<StackStatus, string> = {
 
 function StatusPill({ status }: { status: StackStatus }) {
   return <span className={`rounded-sm border px-1.5 py-0.5 font-mono text-[11px] ${STATUS_STYLE[status] ?? STATUS_STYLE.stopped}`}>{status.replace("_", " ")}</span>;
-}
-
-function Modal({ title, subtitle, icon, children, close, busy = false, wide = false, fullscreen = false }: { title: string; subtitle?: string; icon?: React.ReactNode; children: React.ReactNode; close: () => void; busy?: boolean; wide?: boolean; fullscreen?: boolean }) {
-  const sizeClass = fullscreen ? "flex h-[92vh] w-[96vw] max-w-[1400px] flex-col overflow-hidden p-0" : `max-h-[90vh] overflow-auto p-5 ${wide ? "max-w-3xl" : "max-w-2xl"}`;
-  return <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-40 grid place-items-center bg-ink/45 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) close(); }}>
-    <div className={`w-full rounded border border-line bg-panel shadow-lg ${sizeClass}`}>
-      <div className={`flex items-center gap-3 ${fullscreen ? "border-b border-line px-5 py-4" : ""}`}>
-        {icon}
-        <div>
-          <h2 className="m-0 text-lg leading-tight">{title}</h2>
-          {subtitle && <p className="m-0 text-[12px] text-muted">{subtitle}</p>}
-        </div>
-        <button type="button" aria-label={`Close ${title}`} disabled={busy} onClick={close} className="ml-auto rounded px-2 text-xl text-muted hover:bg-paper hover:text-text">×</button>
-      </div>
-      {children}
-    </div>
-  </div>;
 }
 
 async function copyToClipboard(text: string, label: string, push: (msg: string, kind?: "error") => void) {
@@ -84,25 +61,10 @@ function readFileAsText(file: File): Promise<string> {
   });
 }
 
-/** One row of the environment-variables panel: a detected ${VAR}'s value, or
- * a manually-added key the compose file doesn't reference (yet). */
-function EnvVarRow({ row, kind, onChange, onRemove, disabled }: { row: EnvRow; kind?: DetectedVar["kind"]; onChange: (row: EnvRow) => void; onRemove?: () => void; disabled: boolean }) {
-  return <div className="flex items-center gap-2 border-b border-linesoft py-1.5 last:border-0">
-    {row.custom
-      ? <input aria-label="Variable name" disabled={disabled} value={row.key} onChange={(e) => onChange({ ...row, key: e.target.value })} placeholder="KEY" className="w-[42%] rounded border border-line bg-panel px-2 py-1 font-mono text-[12px]" />
-      : <span className="w-[42%] truncate font-mono text-[12.5px]" title={row.key}>{row.key}</span>}
-    <input aria-label={`Value for ${row.key || "variable"}`} disabled={disabled} value={row.value} onChange={(e) => onChange({ ...row, value: e.target.value })} placeholder="value" className="min-w-0 flex-1 rounded border border-line bg-panel px-2 py-1 font-mono text-[12px]" />
-    {kind && <span className={`shrink-0 rounded-sm border px-1 py-0.5 font-mono text-[10px] ${VAR_KIND_STYLE[kind]}`}>{VAR_KIND_LABEL[kind]}</span>}
-    {onRemove && <button type="button" title="Remove" aria-label={`Remove ${row.key || "variable"}`} disabled={disabled} onClick={onRemove} className={dangerIconAction}><Trash2 size={13} /></button>}
-  </div>;
-}
-
 /** Create/edit modal: a full-size two-pane editor — the compose file on the
  * left, a structured environment-variables panel on the right that tracks
- * every ${VAR} the file references as the user types. The Graph tab PROMPTS.md
- * scopes for M17.6 is deliberately not built here; it stays a disabled
- * placeholder so the tab strip matches the target layout without pretending
- * the feature exists. */
+ * every ${VAR} the file references as the user types. A second "Graph" tab
+ * (M17.6.1) offers a two-way node-graph view of the same compose file. */
 function StackEditorModal({ existing, close, onDeploy }: { existing?: Stack; close: () => void; onDeploy: (name: string, action: "up" | "redeploy") => void }) {
   const queryClient = useQueryClient(); const { push } = useToast(); const navigate = useNavigate();
   const [name, setName] = useState(existing?.name ?? "");
@@ -114,6 +76,7 @@ function StackEditorModal({ existing, close, onDeploy }: { existing?: Stack; clo
   const composeFileInput = useRef<HTMLInputElement>(null);
   const envFileInput = useRef<HTMLInputElement>(null);
   const valid = stackName.test(name) && composeYAML.trim().length > 0;
+  const [modalTab, setModalTab] = useState<"editor" | "graph">("editor");
 
   const detected = useMemo(() => detectVariables(composeYAML), [composeYAML]);
 
@@ -191,12 +154,12 @@ function StackEditorModal({ existing, close, onDeploy }: { existing?: Stack; clo
     title={existing ? `Edit compose stack ${existing.name}` : "Create compose stack"}
     subtitle={existing ? "Update the stored compose file and environment" : "Create a new Docker Compose stack"}
     icon={<Layers size={20} className="text-hull" />}
-    close={close} busy={busy} fullscreen
+    close={close} busy={busy} fullscreen maximizable
   >
     <form onSubmit={(e: FormEvent) => { e.preventDefault(); void save(false); }} className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-1 border-b border-line px-5">
-        <button type="button" className="border-b-2 border-hull px-3 py-2.5 text-[13px] font-medium text-text">Editor</button>
-        <button type="button" title="The visual dependency graph is deferred past M17.6" disabled className="px-3 py-2.5 text-[13px] text-muted opacity-50">Graph</button>
+        <button type="button" onClick={() => setModalTab("editor")} className={`px-3 py-2.5 text-[13px] ${modalTab === "editor" ? "border-b-2 border-hull font-medium text-text" : "text-muted"}`}>Editor</button>
+        <button type="button" onClick={() => setModalTab("graph")} disabled={!valid} title={!valid ? "Enter a valid name and compose file first" : undefined} className={`px-3 py-2.5 text-[13px] disabled:opacity-50 ${modalTab === "graph" ? "border-b-2 border-hull font-medium text-text" : "text-muted"}`}>Graph</button>
       </div>
 
       {!existing && <div className="border-b border-line px-5 py-3">
@@ -204,7 +167,9 @@ function StackEditorModal({ existing, close, onDeploy }: { existing?: Stack; clo
         {name && !stackName.test(name) && <p className="mb-0 mt-1 text-[12px] text-fail">Use 1–63 letters, digits, dots, underscores, or hyphens; start with a letter or digit.</p>}
       </div>}
 
-      <div className="grid min-h-0 flex-1 grid-cols-2 divide-x divide-line">
+      {modalTab === "graph" && <StackGraph stackKey={existing?.name ?? name} composeYAML={composeYAML} onComposeYAMLChange={setComposeYAML} busy={busy} />}
+
+      <div className={`grid min-h-0 flex-1 grid-cols-2 divide-x divide-line ${modalTab === "graph" ? "hidden" : ""}`}>
         <div className="flex min-h-0 flex-col">
           <div className="flex items-center gap-2 border-b border-linesoft px-4 py-2 text-[12.5px]">
             <span className="text-muted">Compose file</span>

@@ -78,6 +78,8 @@ var protectedRoutes = []protectedRoute{
 	{http.MethodPost, "/api/v1/networks/n1/disconnect", `{"container":"c1"}`, store.RoleOperator},
 	{http.MethodGet, "/api/v1/stacks", "", store.RoleViewer},
 	{http.MethodPost, "/api/v1/stacks", `{"name":"acme","compose_yaml":"services:\n  api:\n    image: alpine:3\n"}`, store.RoleOperator},
+	{http.MethodPost, "/api/v1/stacks/graph/to", `{"compose_yaml":"services:\n  api:\n    image: alpine:3\n"}`, store.RoleViewer},
+	{http.MethodPost, "/api/v1/stacks/graph/from", `{"nodes":[{"id":"service:api","kind":"service","name":"api","service":{"image":"alpine:3"}}],"edges":[]}`, store.RoleViewer},
 	{http.MethodGet, "/api/v1/stacks/acme", "", store.RoleViewer},
 	{http.MethodPut, "/api/v1/stacks/acme", `{"compose_yaml":"services:\n  api:\n    image: alpine:3\n"}`, store.RoleOperator},
 	{http.MethodDelete, "/api/v1/stacks/acme", "", store.RoleOperator},

@@ -79,6 +79,92 @@ func jsonString(value string) string {
 	return string(encoded)
 }
 
+func TestStackGraphToAndFromRoundTrip(t *testing.T) {
+	router, _ := stackRouter(t, newFakeDockerClient())
+
+	response := performRequestBody(router, http.MethodPost, "/api/v1/stacks/graph/to", `{"compose_yaml":`+jsonString(stackYAML)+`}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("graph/to status=%d body=%s", response.Code, response.Body.String())
+	}
+	var toView stackGraphToView
+	if err := json.Unmarshal(response.Body.Bytes(), &toView); err != nil {
+		t.Fatal(err)
+	}
+	if len(toView.Nodes) != 2 {
+		t.Fatalf("nodes = %+v", toView.Nodes)
+	}
+
+	nodesJSON, err := json.Marshal(toView.Nodes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response = performRequestBody(router, http.MethodPost, "/api/v1/stacks/graph/from", `{"nodes":`+string(nodesJSON)+`,"edges":[]}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("graph/from status=%d body=%s", response.Code, response.Body.String())
+	}
+	var fromView stackGraphFromView
+	if err := json.Unmarshal(response.Body.Bytes(), &fromView); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fromView.ComposeYAML, "alpine:3") || !strings.Contains(fromView.ComposeYAML, "nginx:1") {
+		t.Fatalf("compose_yaml = %s", fromView.ComposeYAML)
+	}
+
+	response = performRequestBody(router, http.MethodPost, "/api/v1/stacks/graph/to", `{"compose_yaml":""}`)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("empty compose_yaml status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+// TestStackGraphFromPatchesInPlaceGivenPreviousYAML confirms the handler
+// wires previous_compose_yaml through to Compose.Patch: an edit that adds
+// one field to one service must leave the rest of the file, including an
+// unrelated service's untouched formatting, byte-identical.
+func TestStackGraphFromPatchesInPlaceGivenPreviousYAML(t *testing.T) {
+	router, _ := stackRouter(t, newFakeDockerClient())
+	original := "services:\n  api:\n    image: alpine:3\n    environment:\n      PORT: \"8080\"\n  worker:\n    image: alpine:3\n"
+
+	toResponse := performRequestBody(router, http.MethodPost, "/api/v1/stacks/graph/to", `{"compose_yaml":`+jsonString(original)+`}`)
+	if toResponse.Code != http.StatusOK {
+		t.Fatalf("graph/to status=%d body=%s", toResponse.Code, toResponse.Body.String())
+	}
+	var toView stackGraphToView
+	if err := json.Unmarshal(toResponse.Body.Bytes(), &toView); err != nil {
+		t.Fatal(err)
+	}
+
+	// Add a dependency edge: worker depends_on api.
+	var apiID, workerID string
+	for _, n := range toView.Nodes {
+		if n.Name == "api" {
+			apiID = n.ID
+		}
+		if n.Name == "worker" {
+			workerID = n.ID
+		}
+	}
+	edges := append(toView.Edges, graphEdge{ID: "dependency:api:worker", Kind: "dependency", From: apiID, To: workerID})
+
+	nodesJSON, _ := json.Marshal(toView.Nodes)
+	edgesJSON, _ := json.Marshal(edges)
+	fromResponse := performRequestBody(router, http.MethodPost, "/api/v1/stacks/graph/from",
+		`{"nodes":`+string(nodesJSON)+`,"edges":`+string(edgesJSON)+`,"previous_compose_yaml":`+jsonString(original)+`}`)
+	if fromResponse.Code != http.StatusOK {
+		t.Fatalf("graph/from status=%d body=%s", fromResponse.Code, fromResponse.Body.String())
+	}
+	var fromView stackGraphFromView
+	if err := json.Unmarshal(fromResponse.Body.Bytes(), &fromView); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(fromView.ComposeYAML, `PORT: "8080"`) {
+		t.Fatalf("expected original double-quote style preserved untouched, got:\n%s", fromView.ComposeYAML)
+	}
+	if !strings.Contains(fromView.ComposeYAML, "depends_on:") || !strings.Contains(fromView.ComposeYAML, "- api") {
+		t.Fatalf("expected new depends_on entry, got:\n%s", fromView.ComposeYAML)
+	}
+}
+
 func TestStackListJoinsLiveContainerStatus(t *testing.T) {
 	fake := newFakeDockerClient()
 	fake.containers = []dockerapi.Container{labeled("acme-api-1", "api", "running"), labeled("acme-web-1", "web", "exited")}
