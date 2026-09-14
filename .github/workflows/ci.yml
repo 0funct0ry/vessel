@@ -31,6 +31,12 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+          # Prebuilt golangci-lint releases lag the Go toolchain (e.g.
+          # v1.64.8 is built with go1.24, which can't load a go.mod
+          # targeting a newer `go` directive than that). Building from
+          # source against the runner's own toolchain (set up above from
+          # go.mod) avoids that mismatch.
+          install-mode: goinstall
 
   docs-verify:
     runs-on: ubuntu-latest
