@@ -135,7 +135,7 @@ func createContainer(t *testing.T, base, image string) string {
 
 func lifecycle(t *testing.T, base, id, action string) {
 	t.Helper()
-	doJSON(t, http.MethodPost, base+"/containers/"+id+"/"+action, nil, http.StatusOK)
+	doJSON(t, http.MethodPost, base+"/containers/"+id+"/"+action, nil, http.StatusNoContent)
 }
 
 func removeContainer(t *testing.T, base, id string) {
