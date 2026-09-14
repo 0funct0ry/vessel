@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vessel — one binary, every container on the host</title>
+<meta name="description" content="Vessel is a single-binary web UI for the Docker containers on one host. No agent, no database server, no control plane.">
+<meta property="og:title" content="Vessel — one binary, every container on the host">
+<meta property="og:description" content="Vessel is a single-binary web UI for the Docker containers on one host. No agent, no database server, no control plane.">
+<meta property="og:image" content="/og-image.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body class="m-0 font-sans text-text dark:text-[#CBDCE3] bg-paper dark:bg-ink text-base leading-[1.55] antialiased">
+
+<header class="border-b border-line dark:border-steel bg-panel dark:bg-hull">
+  <div class="max-w-[1080px] mx-auto px-6 flex items-center gap-6 h-[58px]">
+    <a href="#" class="font-semibold text-lg tracking-tight no-underline text-text dark:text-white">
+      Vessel <span class="text-muted font-normal text-sm font-mono ml-2">v0.1.0</span>
+    </a>
+    <nav class="ml-auto hidden sm:flex gap-5 text-sm">
+      <a href="#what" class="no-underline text-muted hover:text-text dark:hover:text-white">What it does</a>
+      <a href="#compare" class="no-underline text-muted hover:text-text dark:hover:text-white">Compare</a>
+      <a href="#security" class="no-underline text-muted hover:text-text dark:hover:text-white">Security</a>
+      <a href="#install" class="no-underline text-muted hover:text-text dark:hover:text-white">Install</a>
+      <a href="/docs/" class="no-underline text-muted hover:text-text dark:hover:text-white">Docs</a>
+      <a href="https://github.com/0funct0ry/vessel" class="no-underline text-muted hover:text-text dark:hover:text-white">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="max-w-[1080px] mx-auto px-6 pt-16">
+  <h1 class="text-[clamp(34px,5.2vw,60px)] leading-[1.04] tracking-[-.025em] font-semibold m-0 mb-[18px] max-w-[19ch]">
+    Every container on the host, on one page.
+  </h1>
+  <p class="text-lg text-[#2B4A58] dark:text-[#A9C2CC] max-w-[62ch] m-0 mb-6">
+    Vessel is a single binary with the web UI inside it. Copy it to the machine, run it,
+    open a browser. No agent, no database server, no control plane, nothing to keep running afterwards.
+  </p>
+
+  <div class="flex gap-3 flex-wrap items-center mb-3">
+    <a href="#install" class="inline-block px-5 py-[11px] rounded-[3px] no-underline text-[15px] bg-hull border border-hull text-white hover:bg-steel">Install Vessel</a>
+    <a href="/docs/" class="inline-block px-5 py-[11px] rounded-[3px] no-underline text-[15px] border border-line dark:border-steel bg-panel dark:bg-hull text-text dark:text-white hover:border-steel">Read the docs</a>
+  </div>
+
+  <div class="flex items-center gap-3 bg-ink text-[#CBDCE3] rounded-[3px] px-3.5 py-[11px] font-mono text-[13.5px] overflow-auto">
+    <span class="text-[#7FD1AE]">$</span>
+    <span>curl -sSfL vessel.0funct0ry.dev/install.sh | sh &amp;&amp; vessel serve</span>
+    <button type="button" data-copy="curl -sSfL vessel.0funct0ry.dev/install.sh | sh && vessel serve"
+      class="ml-auto bg-transparent border border-white/25 text-[#CBDCE3] rounded-sm px-2.5 py-[3px] text-xs cursor-pointer flex-none">Copy</button>
+  </div>
+
+  <div class="flex gap-7 flex-wrap mt-[22px] text-sm text-muted">
+    <span><b class="font-mono font-medium text-text dark:text-white">~14 MB</b> binary</span>
+    <span><b class="font-mono font-medium text-text dark:text-white">0</b> runtime dependencies</span>
+    <span><b class="font-mono font-medium text-text dark:text-white">1</b> Docker host per process</span>
+    <span><b class="font-mono font-medium text-text dark:text-white">Apache-2.0</b></span>
+  </div>
+</div>
+
+<div class="max-w-[1080px] mx-auto px-6">
+  <div class="mt-11 border border-line dark:border-steel rounded-t-[5px] overflow-hidden bg-panel dark:bg-hull">
+    <div class="flex items-center gap-3 bg-ink text-[#A9C2CC] px-3.5 py-[9px] text-[12.5px] font-mono">
+      <span class="w-[9px] h-[9px] rounded-full bg-run flex-none"></span>
+      shipyard-1 · Engine 27.3.1 · 127.0.0.1:7373
+    </div>
+    <table class="w-full border-collapse text-[13.5px]">
+      <thead>
+        <tr>
+          <th class="text-left text-[11.5px] text-muted font-semibold px-3.5 py-[7px] bg-[#F6F8F8] dark:bg-[#0E2836] border-b border-line dark:border-steel whitespace-nowrap w-[104px]">State</th>
+          <th class="text-left text-[11.5px] text-muted font-semibold px-3.5 py-[7px] bg-[#F6F8F8] dark:bg-[#0E2836] border-b border-line dark:border-steel whitespace-nowrap">Name</th>
+          <th class="hidden sm:table-cell text-left text-[11.5px] text-muted font-semibold px-3.5 py-[7px] bg-[#F6F8F8] dark:bg-[#0E2836] border-b border-line dark:border-steel whitespace-nowrap">Image</th>
+          <th class="text-left text-[11.5px] text-muted font-semibold px-3.5 py-[7px] bg-[#F6F8F8] dark:bg-[#0E2836] border-b border-line dark:border-steel whitespace-nowrap">Ports</th>
+          <th class="hidden sm:table-cell text-left text-[11.5px] text-muted font-semibold px-3.5 py-[7px] bg-[#F6F8F8] dark:bg-[#0E2836] border-b border-line dark:border-steel whitespace-nowrap">Uptime</th>
+          <th class="text-right text-[11.5px] text-muted font-semibold px-3.5 py-[7px] bg-[#F6F8F8] dark:bg-[#0E2836] border-b border-line dark:border-steel whitespace-nowrap">CPU</th>
+          <th class="hidden sm:table-cell text-right text-[11.5px] text-muted font-semibold px-3.5 py-[7px] bg-[#F6F8F8] dark:bg-[#0E2836] border-b border-line dark:border-steel whitespace-nowrap">Memory</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap"><span class="inline-flex items-center gap-[7px] text-[12.5px] text-run"><i class="flag-mark is-run"></i>running</span></td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap"><strong>api</strong></td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-[12.5px] text-muted">ghcr.io/acme/api:1.4.2</td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono">8080→8080</td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-[12.5px] text-muted">3h 12m</td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap text-right font-mono text-[12.5px]">12.8%</td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap text-right font-mono text-[12.5px] text-muted">214 MiB</td>
+        </tr>
+        <tr>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap"><span class="inline-flex items-center gap-[7px] text-[12.5px] text-run"><i class="flag-mark is-run"></i>running</span></td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap"><strong>postgres</strong></td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-[12.5px] text-muted">postgres:16.4-alpine</td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono">5432→5432</td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-[12.5px] text-muted">9d 4h</td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap text-right font-mono text-[12.5px]">22.4%</td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap text-right font-mono text-[12.5px] text-muted">1.6 GiB</td>
+        </tr>
+        <tr>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap"><span class="inline-flex items-center gap-[7px] text-[12.5px] text-run"><i class="flag-mark is-run"></i>running</span></td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap"><strong>worker-1</strong></td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-[12.5px] text-muted">ghcr.io/acme/worker:1.4.2</td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-muted">—</td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-[12.5px] text-muted">3h 11m</td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap text-right font-mono text-[12.5px]">31.6%</td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap text-right font-mono text-[12.5px] text-muted">402 MiB</td>
+        </tr>
+        <tr>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap"><span class="inline-flex items-center gap-[7px] text-[12.5px] text-fail"><i class="flag-mark is-fail"></i>exited</span></td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap"><strong>worker-2</strong></td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-[12.5px] text-muted">ghcr.io/acme/worker:1.4.2</td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-muted">—</td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-[12.5px] text-muted">—</td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap text-right font-mono text-[12.5px] text-muted">—</td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap text-right font-mono text-[12.5px] text-muted">exit 137</td>
+        </tr>
+        <tr>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap"><span class="inline-flex items-center gap-[7px] text-[12.5px] text-pause"><i class="flag-mark is-paused"></i>paused</span></td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap"><strong>pgbouncer</strong></td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-[12.5px] text-muted">edoburu/pgbouncer:1.23</td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono">6432→6432</td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-[12.5px] text-muted">2h 04m</td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap text-right font-mono text-[12.5px]">0.0%</td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap text-right font-mono text-[12.5px] text-muted">12 MiB</td>
+        </tr>
+        <tr>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap"><span class="inline-flex items-center gap-[7px] text-[12.5px] text-run"><i class="flag-mark is-run"></i>running</span></td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap"><strong>traefik</strong></td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-[12.5px] text-muted">traefik:v3.1</td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono">80, 443</td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap font-mono text-[12.5px] text-muted">9d 4h</td>
+          <td class="px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap text-right font-mono text-[12.5px]">3.3%</td>
+          <td class="hidden sm:table-cell px-3.5 h-[33px] border-b border-line-soft dark:border-steel/40 whitespace-nowrap text-right font-mono text-[12.5px] text-muted">74 MiB</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="px-3.5 py-[9px] text-[12.5px] text-muted border-t border-line dark:border-steel bg-[#F6F8F8] dark:bg-[#0E2836]">
+      14 containers · 11 running · state is a square, so it reads without colour
+    </div>
+  </div>
+</div>
+
+<section id="what" class="py-16 bg-panel dark:bg-hull border-t border-b border-line dark:border-steel">
+  <div class="max-w-[1080px] mx-auto px-6">
+    <h2 class="text-[clamp(24px,3vw,33px)] tracking-[-.02em] m-0 mb-2.5 font-semibold">What you can do with it</h2>
+    <p class="text-[#2B4A58] dark:text-[#A9C2CC] max-w-[64ch] m-0 mb-[30px] text-[17px]">
+      Everything here is in v0.1.0. Nothing here is behind a licence key, a signup, or a "contact us".
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-px bg-line dark:bg-steel border border-line dark:border-steel rounded overflow-hidden">
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Run the lifecycle</h3>
+        <p class="m-0 text-sm text-muted">Start, stop, restart, pause, kill, rename and remove containers. Select several and act on all of them, with a per-container result when one fails.</p>
+      </div>
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Read the logs</h3>
+        <p class="m-0 text-sm text-muted">Stream with follow, tail, since and a substring filter. stderr is separated properly — Vessel demultiplexes the engine stream instead of guessing.</p>
+      </div>
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Watch the numbers</h3>
+        <p class="m-0 text-sm text-muted">Live CPU, memory against limit, network and block I/O per container, computed the way <span class="font-mono text-text dark:text-white">docker stats</span> computes them.</p>
+      </div>
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Open a shell</h3>
+        <p class="m-0 text-sm text-muted">An interactive terminal inside a running container, in the browser. Every session is logged. Turn it off entirely with <span class="font-mono text-text dark:text-white">--allow-exec=false</span>.</p>
+      </div>
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Manage images</h3>
+        <p class="m-0 text-sm text-muted">Browse, inspect layers, pull with per-layer progress, tag, remove, prune with a reclaim figure before you commit.</p>
+      </div>
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Volumes and networks</h3>
+        <p class="m-0 text-sm text-muted">Create, inspect and remove — with the back-reference that matters: which containers use this volume, and at which IP on this network.</p>
+      </div>
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Dispatch webhooks</h3>
+        <p class="m-0 text-sm text-muted">Turn Docker events into signed HTTP POSTs. Filters, retries with backoff, a delivery log you can read, and one-click replay.</p>
+      </div>
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Gate it with logins</h3>
+        <p class="m-0 text-sm text-muted">Optional JWT auth with bcrypt credentials in SQLite and three roles: viewer, operator, admin. Or run <span class="font-mono text-text dark:text-white">--read-only</span> and hand it to anyone.</p>
+      </div>
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Or keep no state at all</h3>
+        <p class="m-0 text-sm text-muted">Omit <span class="font-mono text-text dark:text-white">--db</span> and Vessel keeps everything in memory. Nothing is written to the host. Vessel says so at startup.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="compare" class="py-16">
+  <div class="max-w-[1080px] mx-auto px-6">
+    <h2 class="text-[clamp(24px,3vw,33px)] tracking-[-.02em] m-0 mb-2.5 font-semibold">Where Vessel fits, and where it doesn't</h2>
+    <p class="text-[#2B4A58] dark:text-[#A9C2CC] max-w-[64ch] m-0 mb-[30px] text-[17px]">
+      The rows Vessel loses are in this table too. If one of them is what you need, Portainer is a good product and you should use it.
+    </p>
+    <div class="overflow-x-auto">
+    <table class="w-full border-collapse bg-panel dark:bg-hull border border-line dark:border-steel rounded overflow-hidden text-[14.5px] min-w-[640px]">
+      <thead>
+        <tr>
+          <th class="text-left px-3.5 py-[11px] bg-[#F6F8F8] dark:bg-[#0E2836] border-b border-line dark:border-steel text-[13px] w-[44%]">&nbsp;</th>
+          <th class="text-left px-3.5 py-[11px] bg-[#F6F8F8] dark:bg-[#0E2836] border-b border-line dark:border-steel text-[13px]">Vessel</th>
+          <th class="text-left px-3.5 py-[11px] bg-[#F6F8F8] dark:bg-[#0E2836] border-b border-line dark:border-steel text-[13px]">Portainer CE</th>
+          <th class="text-left px-3.5 py-[11px] bg-[#F6F8F8] dark:bg-[#0E2836] border-b border-line dark:border-steel text-[13px]">Docker CLI</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40">Install</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">one 14 MB binary</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40">container + volume</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">already there</td></tr>
+        <tr><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40">Runs with no persistent state</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-fail">no</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td></tr>
+        <tr><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40">Container lifecycle, logs, stats, shell</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td></tr>
+        <tr><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40">Docker events as signed webhooks</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-fail">no</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-fail">no</td></tr>
+        <tr><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40">Refuses to expose itself unauthenticated</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes, by default</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-fail">no</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40">n/a</td></tr>
+        <tr class="bg-[#FDF6F4] dark:bg-fail/10"><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40">Compose / stack deploy</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-fail">not yet — v0.2</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td></tr>
+        <tr class="bg-[#FDF6F4] dark:bg-fail/10"><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40">Build images from a Dockerfile</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-fail">not yet — v0.2</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td></tr>
+        <tr class="bg-[#FDF6F4] dark:bg-fail/10"><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40">Push to a registry</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-fail">not yet — v0.2</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td></tr>
+        <tr class="bg-[#FDF6F4] dark:bg-fail/10"><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40">Several hosts in one UI</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-fail">no — one engine per process</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40">n/a</td></tr>
+        <tr class="bg-[#FDF6F4] dark:bg-fail/10"><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40">Swarm and Kubernetes</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-fail">never</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td><td class="px-3.5 py-[10px] border-b border-line-soft dark:border-steel/40 text-run">yes</td></tr>
+        <tr class="bg-[#FDF6F4] dark:bg-fail/10"><td class="px-3.5 py-[10px]">Teams, per-resource permissions, OIDC</td><td class="px-3.5 py-[10px] text-fail">flat roles only</td><td class="px-3.5 py-[10px] text-run">yes</td><td class="px-3.5 py-[10px]">n/a</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="text-[13.5px] text-muted mt-3 max-w-[70ch]">
+      Vessel is for one box you can SSH into: a VPS, a home server, a CI runner, a dev machine. It stops being the right tool the moment you have three of them.
+    </p>
+  </div>
+</section>
+
+<section id="security" class="py-16 bg-panel dark:bg-hull border-t border-b border-line dark:border-steel">
+  <div class="max-w-[1080px] mx-auto px-6">
+    <h2 class="text-[clamp(24px,3vw,33px)] tracking-[-.02em] m-0 mb-2.5 font-semibold">The Docker socket is root</h2>
+    <p class="text-[#2B4A58] dark:text-[#A9C2CC] max-w-[64ch] m-0 mb-[30px] text-[17px]">
+      Anything that can reach Vessel's API can control the host. Every default follows from that, and one of them will stop you the first time you try it.
+    </p>
+    <div class="border border-pause border-l-4 bg-[#FDF8EC] dark:bg-pause/10 rounded-[3px] px-[18px] py-4 max-w-[74ch]">
+      <h3 class="m-0 mb-1.5 text-base">Vessel will not bind a public interface without authentication</h3>
+      <p class="m-0 mb-2 text-[14.5px]">Run <span class="font-mono text-text dark:text-white">vessel serve --addr 0.0.0.0</span> without <span class="font-mono text-text dark:text-white">--auth</span> and it exits instead of starting:</p>
+      <pre class="mt-2 bg-ink text-[#CBDCE3] px-3 py-2.5 rounded-[3px] font-mono text-[12.5px] overflow-auto">refusing to bind 0.0.0.0:7373 without --auth
+Vessel proxies the Docker socket, which is equivalent to root on this host.
+Either bind loopback and use an SSH tunnel:
+  ssh -L 7373:127.0.0.1:7373 user@host
+or create a user and enable auth:
+  vessel user add admin --role admin --db vessel.db
+  vessel serve --db vessel.db --auth --addr 0.0.0.0</pre>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-px bg-line dark:bg-steel border border-line dark:border-steel rounded overflow-hidden mt-6">
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Loopback by default</h3>
+        <p class="m-0 text-sm text-muted">Binds <span class="font-mono text-text dark:text-white">127.0.0.1:7373</span>. The intended remote workflow is an SSH tunnel, which needs no new credentials at all.</p>
+      </div>
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Read-only mode</h3>
+        <p class="m-0 text-sm text-muted"><span class="font-mono text-text dark:text-white">--read-only</span> rejects every mutating request at the middleware, not in the UI. The recommended way to let someone else debug.</p>
+      </div>
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Env values are masked</h3>
+        <p class="m-0 text-sm text-muted">Container environment usually holds credentials. Vessel masks values and logs a line when one is revealed.</p>
+      </div>
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Console is optional</h3>
+        <p class="m-0 text-sm text-muted"><span class="font-mono text-text dark:text-white">--allow-exec=false</span> removes the route, not just the button. Sessions that do happen are logged with user, container and command.</p>
+      </div>
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Webhooks are admin-only</h3>
+        <p class="m-0 text-sm text-muted">An endpoint that POSTs anywhere is an SSRF primitive. Only admins can create one, redirects are not followed, bodies are HMAC-signed.</p>
+      </div>
+      <div class="bg-panel dark:bg-hull p-5">
+        <h3 class="m-0 mb-1.5 text-[15.5px] font-semibold">Login is throttled</h3>
+        <p class="m-0 text-sm text-muted">Exponential per-user backoff, constant-time comparison, and the same error for a wrong password and an unknown user.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="install" class="py-16">
+  <div class="max-w-[1080px] mx-auto px-6">
+    <h2 class="text-[clamp(24px,3vw,33px)] tracking-[-.02em] m-0 mb-2.5 font-semibold">Running in about thirty seconds</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-[22px] items-start">
+      <ol class="m-0 pl-5 list-decimal">
+        <li class="mb-3.5"><strong>Get the binary.</strong> The install script, a GitHub release, <code class="font-mono text-[13px] bg-[#E4EAE9] dark:bg-steel/40 px-1.5 py-0.5 rounded-sm">go install</code>, or Homebrew. Linux and macOS, amd64 and arm64.</li>
+        <li class="mb-3.5"><strong>Run it.</strong> No flags needed. Vessel finds <code class="font-mono text-[13px] bg-[#E4EAE9] dark:bg-steel/40 px-1.5 py-0.5 rounded-sm">/var/run/docker.sock</code> and prints the URL it is listening on.</li>
+        <li class="mb-3.5"><strong>Decide about state.</strong> Add <code class="font-mono text-[13px] bg-[#E4EAE9] dark:bg-steel/40 px-1.5 py-0.5 rounded-sm">--db</code> when you want users and webhooks to survive a restart. Leave it off and nothing touches the disk.</li>
+        <li class="mb-3.5"><strong>Reach it from your laptop.</strong> An SSH tunnel, or <code class="font-mono text-[13px] bg-[#E4EAE9] dark:bg-steel/40 px-1.5 py-0.5 rounded-sm">--auth</code> with a user you create.</li>
+      </ol>
+      <pre class="bg-ink text-[#CBDCE3] p-3.5 rounded font-mono text-[13px] overflow-auto m-0"><i class="text-[#7F9BA6] not-italic"># local, no state, no login</i>
+<b class="text-[#7FD1AE] font-normal">$</b> vessel serve
+
+<i class="text-[#7F9BA6] not-italic"># persistent, with logins, behind a tunnel</i>
+<b class="text-[#7FD1AE] font-normal">$</b> vessel user add anirban --role admin \
+    --db /var/lib/vessel/vessel.db
+<b class="text-[#7FD1AE] font-normal">$</b> vessel serve --db /var/lib/vessel/vessel.db --auth
+
+<i class="text-[#7F9BA6] not-italic"># check the host before anything else</i>
+<b class="text-[#7FD1AE] font-normal">$</b> vessel doctor
+socket   /var/run/docker.sock  ok
+engine   27.3.1 (API v1.43)    ok
+uid 1000 in group docker       ok</pre>
+    </div>
+  </div>
+</section>
+
+<section class="py-16 bg-ink text-[#CBDCE3]">
+  <div class="max-w-[1080px] mx-auto px-6">
+    <h2 class="text-[clamp(24px,3vw,33px)] tracking-[-.02em] m-0 mb-2.5 font-semibold text-white">What comes next</h2>
+    <p class="text-[#A9C2CC] max-w-[64ch] m-0 mb-[30px] text-[17px]">
+      Written down so you can tell whether Vessel will ever do the thing you need.
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-[18px]">
+      <div class="border border-run rounded px-[18px] py-[18px]">
+        <h3 class="m-0 mb-2.5 text-sm font-semibold text-[#7FD1AE]">v0.1.0 — shipping</h3>
+        <ul class="m-0 pl-[18px] text-sm text-[#A9C2CC]">
+          <li class="mb-1.5">Containers, images, volumes, networks</li>
+          <li class="mb-1.5">Logs, live stats, browser console</li>
+          <li class="mb-1.5">Event feed and signed webhooks</li>
+          <li class="mb-1.5">Optional JWT auth, three roles</li>
+        </ul>
+      </div>
+      <div class="border border-white/[.14] rounded px-[18px] py-[18px]">
+        <h3 class="m-0 mb-2.5 text-sm font-semibold text-[#E8C878]">v0.2.0 — next</h3>
+        <ul class="m-0 pl-[18px] text-sm text-[#A9C2CC]">
+          <li class="mb-1.5">Compose and stack deploy</li>
+          <li class="mb-1.5">App templates</li>
+          <li class="mb-1.5">Image build from a Dockerfile</li>
+          <li class="mb-1.5">Registry credentials and push</li>
+        </ul>
+      </div>
+      <div class="border border-white/[.14] rounded px-[18px] py-[18px]">
+        <h3 class="m-0 mb-2.5 text-sm font-semibold text-[#E8C878]">Later, or never</h3>
+        <ul class="m-0 pl-[18px] text-sm text-[#A9C2CC]">
+          <li class="mb-1.5">Several hosts in one UI — later</li>
+          <li class="mb-1.5">Teams, per-resource rules, OIDC — later</li>
+          <li class="mb-1.5">Prometheus <span class="font-mono">/metrics</span> — later</li>
+          <li class="mb-1.5">Swarm and Kubernetes — never</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="border-t border-line dark:border-steel bg-panel dark:bg-hull py-[34px] text-sm text-muted">
+  <div class="max-w-[1080px] mx-auto px-6 flex gap-[30px] flex-wrap">
+    <a href="/docs/" class="no-underline text-muted hover:text-text dark:hover:text-white">Docs</a>
+    <a href="https://github.com/0funct0ry/vessel" class="no-underline text-muted hover:text-text dark:hover:text-white">GitHub</a>
+    <a href="https://github.com/0funct0ry/vessel/releases" class="no-underline text-muted hover:text-text dark:hover:text-white">Releases</a>
+    <a href="https://github.com/0funct0ry/vessel/issues" class="no-underline text-muted hover:text-text dark:hover:text-white">Report an issue</a>
+    <a href="https://github.com/0funct0ry/vessel/security/policy" class="no-underline text-muted hover:text-text dark:hover:text-white">Security policy</a>
+    <span class="ml-auto">Apache-2.0 · built by <a href="https://github.com/0funct0ry" class="no-underline text-muted hover:text-text dark:hover:text-white">0funct0ry</a></span>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll('[data-copy]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    navigator.clipboard.writeText(btn.getAttribute('data-copy')).then(function () {
+      var original = btn.textContent;
+      btn.textContent = 'Copied';
+      setTimeout(function () { btn.textContent = original; }, 1500);
+    });
+  });
+});
+</script>
+</body>
+</html>

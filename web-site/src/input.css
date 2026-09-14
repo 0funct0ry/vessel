@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/archivo-variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/plexmono-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/plexmono-500.woff2') format('woff2');
+}
+
+@layer base {
+  :focus-visible {
+    outline: 2px solid theme('colors.link');
+    outline-offset: 3px;
+  }
+}
+
+@layer components {
+  /* state flag squares in the hero "screenshot" table */
+  .flag-mark {
+    @apply inline-block w-2.5 h-2.5 border-[1.5px] border-stop flex-none;
+  }
+  .flag-mark.is-run {
+    @apply bg-run border-run;
+  }
+  .flag-mark.is-paused {
+    border-color: theme('colors.pause');
+    background: linear-gradient(135deg, theme('colors.pause') 50%, transparent 50%);
+  }
+  .flag-mark.is-fail {
+    @apply bg-fail border-fail;
+  }
+}

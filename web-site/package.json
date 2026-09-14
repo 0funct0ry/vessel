@@ -1,0 +1,13 @@
+{
+  "name": "vessel-web-site",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Vessel marketing site — static HTML built with Tailwind CLI, no runtime framework.",
+  "scripts": {
+    "build": "tailwindcss -i ./src/input.css -o ./dist/styles.css --minify && node ./scripts/copy-static.js",
+    "dev": "tailwindcss -i ./src/input.css -o ./dist/styles.css --watch & node ./scripts/copy-static.js"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.13"
+  }
+}

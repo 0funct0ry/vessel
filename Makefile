@@ -1,4 +1,4 @@
-.PHONY: dev build test lint fmt clean web-build check-bundle-size check-standalone
+.PHONY: dev build test lint fmt clean web-build check-bundle-size check-standalone site
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -34,5 +34,8 @@ lint:
 fmt:
 	gofmt -l -w .
 
+site:
+	cd web-site && npm ci && npm run build
+
 clean:
-	rm -rf bin web/dist
+	rm -rf bin web/dist web-site/dist

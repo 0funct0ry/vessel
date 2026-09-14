@@ -1,0 +1,31 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .sans { font-family: Arial, sans-serif; }
+      .mono { font-family: 'Courier New', monospace; }
+    </style>
+  </defs>
+  <rect width="1200" height="630" fill="#0B1F2A"/>
+  <rect x="0" y="0" width="1200" height="630" fill="none" stroke="#24505F" stroke-width="2"/>
+
+  <text x="80" y="120" class="sans" font-size="34" font-weight="700" fill="#FFFFFF">Vessel</text>
+  <text x="210" y="120" class="mono" font-size="18" fill="#7F9BA6">v0.1.0</text>
+
+  <text x="80" y="230" class="sans" font-size="56" font-weight="600" fill="#FFFFFF">Every container on the</text>
+  <text x="80" y="300" class="sans" font-size="56" font-weight="600" fill="#FFFFFF">host, on one page.</text>
+
+  <text x="80" y="360" class="sans" font-size="22" fill="#A9C2CC">One binary. No agent, no database, no control plane.</text>
+
+  <rect x="80" y="410" width="700" height="52" rx="4" fill="#12303F" stroke="#24505F"/>
+  <text x="102" y="443" class="mono" font-size="17" fill="#7FD1AE">$</text>
+  <text x="122" y="443" class="mono" font-size="17" fill="#CBDCE3">curl -sSfL vessel.0funct0ry.dev/install.sh | sh &amp;&amp; vessel serve</text>
+
+  <g class="mono" font-size="15" fill="#A9C2CC">
+    <text x="80" y="520">14 MB binary</text>
+    <text x="240" y="520">0 runtime deps</text>
+    <text x="430" y="520">1 host per process</text>
+    <text x="640" y="520">Apache-2.0</text>
+  </g>
+
+  <circle cx="1080" cy="90" r="8" fill="#1F7A5C"/>
+</svg>
