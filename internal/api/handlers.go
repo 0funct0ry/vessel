@@ -579,7 +579,7 @@ func (s *server) handleContainerCreate(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		Fail(c, err)
+		Fail(c, forResource("image", spec.Image, err))
 		return
 	}
 	c.JSON(http.StatusCreated, response)

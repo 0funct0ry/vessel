@@ -1,11 +1,13 @@
 import { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import CodeMirror from "@uiw/react-codemirror";
 import { Download, Play, Tags, Trash2, X } from "lucide-react";
 import { Can } from "../auth/Can";
 import { CreateContainerModal } from "../components/containers/CreateContainerModal";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
+import { Modal } from "../components/ui/Modal";
 import { useToast } from "../components/ui/Toast";
 import { api, getToken } from "../lib/api";
 import { basePath } from "../lib/basePath";
@@ -168,22 +170,25 @@ function BuildModal({ close, done }: { close: () => void; done: () => void }) {
       if (!ac.signal.aborted) push(`Could not build image: ${message}`, "error");
     } finally { setBusy(false); controller.current = null; }
   }
-  return <div role="dialog" aria-modal="true" aria-labelledby="build-title" className="fixed inset-0 z-40 grid place-items-center bg-ink/45 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) close(); }}>
-    <div className="w-full max-w-2xl rounded border border-line bg-panel p-5 shadow-lg">
-      <div className="flex items-center gap-3"><h2 id="build-title" className="m-0 text-lg">Build image</h2><button aria-label="Close build dialog" disabled={busy} onClick={close} className="ml-auto rounded px-2 text-xl text-muted hover:bg-paper hover:text-text">×</button></div>
-      <div className="mt-4 flex flex-wrap items-end gap-2">
+  return <Modal title="Build image" close={close} busy={busy} fullscreen maximizable>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-end gap-2 border-b border-line px-5 py-3">
         <label className="min-w-[280px] flex-1 text-[13px]">Tag<input autoFocus disabled={busy} value={tag} onChange={(e) => setTag(e.target.value)} placeholder="ghcr.io/acme/api:1.4.4" className="mt-1 block w-full rounded border border-line bg-panel px-2 py-1.5 font-mono" /></label>
         <input ref={dockerfileInput} className="sr-only" type="file" accept=".dockerfile,Dockerfile,text/plain" onChange={(e) => void readDockerfile(e.target.files?.[0] ?? null)} />
         <input ref={contextInput} className="sr-only" type="file" multiple onChange={(e) => addFiles(e.target.files)} />
         <Button disabled={busy} onClick={() => dockerfileInput.current?.click()}>Upload Dockerfile</Button><Button disabled={busy} onClick={() => contextInput.current?.click()}>Add files</Button>
       </div>
-      <textarea aria-label="Dockerfile" spellCheck={false} disabled={busy} value={dockerfile} onChange={(e) => setDockerfile(e.target.value)} className="mt-3 block h-48 w-full resize-y rounded border border-line bg-panel p-2.5 font-mono text-[12.5px]" />
-      <div className="mt-2 flex flex-wrap gap-1.5 text-[12px]">{files.length === 0 ? <span className="text-muted">Dockerfile only</span> : files.map((file, index) => <span key={`${file.name}-${index}`} className="rounded border border-line bg-paper px-1.5 py-0.5 font-mono">{(file as ContextFile).webkitRelativePath || file.name}<button disabled={busy} aria-label={`Remove ${file.name}`} onClick={() => setFiles((current) => current.filter((_, i) => i !== index))} className="ml-1.5 text-muted hover:text-fail">×</button></span>)}</div>
-      {(lines.length > 0 || step) && <div className="mt-3 rounded border border-line bg-paper p-2"><div className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[12px]">{lines.map((line, index) => <div key={`${index}-${line}`}>{line}</div>)}</div>{step && <div className="mt-2 h-1.5 overflow-hidden rounded bg-panel"><div className="h-full bg-hull" style={{ width: `${Math.round(step.current / step.total * 100)}%` }} /></div>}</div>}
-      {result && <p role="status" className={`mt-3 text-[13px] ${result.ok ? "text-run" : "text-fail"}`}>{result.ok ? "✓ " : ""}{result.message}</p>}
-      <div className="mt-5 flex justify-end gap-2"><Button onClick={close} disabled={busy}>Close</Button>{busy ? <Button variant="danger" onClick={() => controller.current?.abort()}>Cancel</Button> : <Button variant="primary" disabled={!tag.trim() || !dockerfile.trim() || result?.ok} onClick={() => void build()}>Build</Button>}</div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <CodeMirror aria-label="Dockerfile" value={dockerfile} onChange={setDockerfile} theme="light" basicSetup={{ foldGutter: false }} height="100%" style={{ height: "100%", fontSize: "12.5px" }} editable={!busy} />
+      </div>
+      <div className="px-5 py-2">
+        <div className="flex flex-wrap gap-1.5 text-[12px]">{files.length === 0 ? <span className="text-muted">Dockerfile only</span> : files.map((file, index) => <span key={`${file.name}-${index}`} className="rounded border border-line bg-paper px-1.5 py-0.5 font-mono">{(file as ContextFile).webkitRelativePath || file.name}<button disabled={busy} aria-label={`Remove ${file.name}`} onClick={() => setFiles((current) => current.filter((_, i) => i !== index))} className="ml-1.5 text-muted hover:text-fail">×</button></span>)}</div>
+        {(lines.length > 0 || step) && <div className="mt-3 rounded border border-line bg-paper p-2"><div className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[12px]">{lines.map((line, index) => <div key={`${index}-${line}`}>{line}</div>)}</div>{step && <div className="mt-2 h-1.5 overflow-hidden rounded bg-panel"><div className="h-full bg-hull" style={{ width: `${Math.round(step.current / step.total * 100)}%` }} /></div>}</div>}
+        {result && <p role="status" className={`mt-3 text-[13px] ${result.ok ? "text-run" : "text-fail"}`}>{result.ok ? "✓ " : ""}{result.message}</p>}
+      </div>
+      <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3"><Button onClick={close} disabled={busy}>Close</Button>{busy ? <Button variant="danger" onClick={() => controller.current?.abort()}>Cancel</Button> : <Button variant="primary" disabled={!tag.trim() || !dockerfile.trim() || result?.ok} onClick={() => void build()}>Build</Button>}</div>
     </div>
-  </div>;
+  </Modal>;
 }
 
 function PullDialog({ close, done }: { close: () => void; done: () => void }) {

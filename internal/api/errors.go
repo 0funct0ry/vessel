@@ -147,10 +147,17 @@ func Fail(c *gin.Context, err error) {
 	c.AbortWithStatusJSON(status, errorEnvelope{Error: body})
 }
 
+// dockerMessage strips Vessel's own sentinel prefix (e.g. "dockerapi: not
+// found: ") from a wrapped dockerapi error, leaving Docker's own message
+// intact even when that message itself contains ": " (an image reference
+// like "nginx:alpine" following "No such image: ", for instance).
 func dockerMessage(err error) string {
 	message := err.Error()
-	if i := strings.LastIndex(message, ": "); i >= 0 && i+2 < len(message) {
-		return message[i+2:]
+	for _, sentinel := range []error{dockerapi.ErrNotFound, dockerapi.ErrConflict, dockerapi.ErrUnreachable, dockerapi.ErrNotModified} {
+		prefix := sentinel.Error() + ": "
+		if strings.HasPrefix(message, prefix) {
+			return message[len(prefix):]
+		}
 	}
 	return message
 }

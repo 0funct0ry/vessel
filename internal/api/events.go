@@ -147,6 +147,13 @@ func (s *server) handleEvents(c *gin.Context) {
 		return
 	}
 	defer reader.Close()
+	// connectedAt guards persistence: a caller-supplied `since` makes the
+	// Docker daemon replay its own historical events (e.g. the dashboard's
+	// "recent events" panel asks for the last hour), independent of Vessel's
+	// own event log. Only events observed live from here on are written back
+	// into that log — otherwise a replay would silently resurrect events a
+	// user had just cleared.
+	connectedAt := time.Now().Add(-2 * time.Second)
 	Stream(c, func(send func(string, any) error) error {
 		for _, event := range stored {
 			if err := send("docker", storedEventToView(event)); err != nil {
@@ -161,8 +168,10 @@ func (s *server) handleEvents(c *gin.Context) {
 				}
 				return err
 			}
-			if err := persistEvent(c.Request.Context(), s.store, event); err != nil {
-				return err
+			if !time.Unix(event.Time, 0).Before(connectedAt) {
+				if err := persistEvent(c.Request.Context(), s.store, event); err != nil {
+					return err
+				}
 			}
 			if err := send("docker", eventToView(event)); err != nil {
 				return err

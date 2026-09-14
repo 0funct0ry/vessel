@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../ui/Button";
@@ -74,8 +74,7 @@ export function CreateContainerModal({ image = "", existing, close }: { image?: 
           <Section title="Identity">
             <label>Name{editing ? <input value={name} readOnly className={`${input} cursor-not-allowed opacity-70`} /> : <input value={name} onChange={e => setName(e.target.value)} placeholder="api-2" className={input} />}</label>
             {editing && <p className="mt-1 text-[12px] text-muted">Renaming isn't supported here — remove and recreate under a new name instead.</p>}
-            <label className="mt-3 block">Image<input list="create-images" autoFocus value={reference} onChange={e => setReference(e.target.value)} placeholder="ghcr.io/acme/api:1.4.2" className={monoInput} /></label>
-            <datalist id="create-images">{(images.data ?? []).flatMap(image => image.repo_tags).filter(tag => tag !== "<none>:<none>").map(tag => <option key={tag} value={tag} />)}</datalist>
+            <label className="mt-3 block">Image<ImageInput value={reference} onChange={setReference} options={(images.data ?? []).flatMap(image => image.repo_tags).filter(tag => tag !== "<none>:<none>")} /></label>
             <label className="mt-3 block">MAC address<input value={macAddress} onChange={e => setMacAddress(e.target.value)} placeholder="02:42:ac:11:00:02" className={`${monoInput} ${macInvalid ? "border-fail" : ""}`} /></label>
             {macInvalid && <p className="mt-1 text-[12px] text-fail">Must look like xx:xx:xx:xx:xx:xx.</p>}
           </Section>
@@ -83,7 +82,7 @@ export function CreateContainerModal({ image = "", existing, close }: { image?: 
           <RepeatPairs title="Environment" rows={env} setRows={setEnv} update={updatePair} keyPlaceholder="KEY" valuePlaceholder="value" />
         </div>
         <div>
-          <Section title="Ports">{ports.map((p, i) => <div key={i} className="mb-2 grid grid-cols-[1fr_1fr_auto_auto_auto] gap-2"><input value={p.container} onChange={e => updatePort(i, "container", e.target.value)} placeholder="8080" className={monoInput.replace("mt-1 ", "")} /><input value={p.host} onChange={e => updatePort(i, "host", e.target.value)} placeholder="host" className={monoInput.replace("mt-1 ", "")} /><select value={p.protocol} onChange={e => updatePort(i, "protocol", e.target.value)} className="rounded border border-line bg-panel px-1 text-[13px]"><option>tcp</option><option>udp</option></select><button type="button" aria-label="Find next free port" title="Find next free port" onClick={() => void fillNextPort(i)} className="text-muted hover:text-link">⌕</button><button onClick={() => setPorts(rows => rows.filter((_, n) => n !== i))} aria-label="Remove port" className="text-muted hover:text-fail">×</button></div>)}<button onClick={() => setPorts(rows => [...rows, { container: "", host: "", protocol: "tcp" }])} className="text-[12px] text-link underline">Add port</button></Section>
+          <Section title="Ports">{ports.map((p, i) => <div key={i} className="mb-2 grid grid-cols-[1fr_1fr_auto_auto_auto] gap-2"><input value={p.container} onChange={e => updatePort(i, "container", e.target.value)} placeholder="Container Port" className={monoInput.replace("mt-1 ", "")} /><input value={p.host} onChange={e => updatePort(i, "host", e.target.value)} placeholder="Host Port" className={monoInput.replace("mt-1 ", "")} /><select value={p.protocol} onChange={e => updatePort(i, "protocol", e.target.value)} className="rounded border border-line bg-panel px-1 text-[13px]"><option>tcp</option><option>udp</option></select><button type="button" aria-label="Find next free port" title="Find next free port" onClick={() => void fillNextPort(i)} className="text-muted hover:text-link">⌕</button><button onClick={() => setPorts(rows => rows.filter((_, n) => n !== i))} aria-label="Remove port" className="text-muted hover:text-fail">×</button></div>)}<button onClick={() => setPorts(rows => [...rows, { container: "", host: "", protocol: "tcp" }])} className="text-[12px] text-link underline">Add port</button></Section>
           <Section title="Mounts">{mounts.map((m, i) => <div key={i} className="mb-3 grid grid-cols-[auto_1fr_auto] gap-2"><select value={m.type} onChange={e => updateMount(i, "type", e.target.value)} className="rounded border border-line bg-panel px-1 text-[12px]"><option value="volume">volume</option><option value="bind">bind</option></select>{m.type === "volume" ? <select value={m.source} onChange={e => updateMount(i, "source", e.target.value)} className="rounded border border-line bg-panel px-2 text-[13px]"><option value="">Select volume</option>{(volumes.data ?? []).map(v => <option key={v.name}>{v.name}</option>)}</select> : <input value={m.source} onChange={e => updateMount(i, "source", e.target.value)} placeholder="/host/path" className={monoInput.replace("mt-1 ", "")} />}<button onClick={() => setMounts(rows => rows.filter((_, n) => n !== i))} aria-label="Remove mount" className="text-muted hover:text-fail">×</button><span /><input value={m.target} onChange={e => updateMount(i, "target", e.target.value)} placeholder="/var/lib/app" className={monoInput.replace("mt-1 ", "")} /><label className="flex items-center gap-1 text-[12px]"><input type="checkbox" checked={m.ro} onChange={e => updateMount(i, "ro", e.target.checked)} />ro</label></div>)}<button onClick={() => setMounts(rows => [...rows, { source: "", target: "", type: "volume", ro: false }])} className="text-[12px] text-link underline">Add mount</button></Section>
           <Section title="Network & restart">
             <label>Network<select value={network} onChange={e => setNetwork(e.target.value)} className={input}><option value="bridge">bridge</option>{(networks.data ?? []).filter(n => n.id !== "bridge" && n.name !== network).map(n => <option key={n.id} value={n.id}>{n.name}</option>)}</select></label>
@@ -95,6 +94,47 @@ export function CreateContainerModal({ image = "", existing, close }: { image?: 
       </div><p className="mt-3 border border-[#E3CB93] border-l-[3px] border-l-pause rounded-sm bg-[#FDF8EC] px-3 py-[9px] text-[13px]">Bind-mounting a sensitive host path (<code>/</code>, <code>/etc</code>, <code>/var/run/docker.sock</code>) hands the container the same access as the Docker socket itself.</p>{warnings.length > 0 && <div className="border-l-2 border-pause bg-paper p-2 text-[12px]">{warnings.map(w => <p key={w} className="m-0">{w}</p>)}</div>}</div>
       <div className="flex items-center gap-2 border-t border-line px-[18px] py-3"><span className="flex-1" /><Button disabled={busy} onClick={close}>Cancel</Button>{editing ? <Button variant="primary" disabled={!canSubmit} onClick={() => void submit(false)}>Update container</Button> : <><Button variant="primary" disabled={!canSubmit} onClick={() => void submit(false)}>Create</Button><Button variant="primary" disabled={!canSubmit} onClick={() => void submit(true)}>Create and start</Button></>}</div>
     </div>
+  </div>;
+}
+function ImageInput({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: string[] }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const query = value.trim().toLowerCase();
+  const suggestions = (query ? options.filter((o) => o.toLowerCase().includes(query) && o.toLowerCase() !== query) : options).slice(0, 8);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => { if (root.current && !root.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDocClick); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+
+  return <div ref={root} className="relative">
+    <input
+      autoFocus
+      value={value}
+      onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+      onFocus={() => setOpen(true)}
+      placeholder="ghcr.io/acme/api:1.4.2"
+      role="combobox"
+      aria-expanded={open}
+      className={monoInput}
+    />
+    {open && suggestions.length > 0 && <ul role="listbox" className="absolute z-10 mt-1 max-h-52 w-full overflow-auto rounded border border-line bg-panel py-1 shadow-[0_8px_24px_rgba(11,31,42,.18)]">
+      {suggestions.map((tag) => <li key={tag}>
+        <button
+          type="button"
+          role="option"
+          aria-selected={tag === value}
+          onClick={() => { onChange(tag); setOpen(false); }}
+          className="block w-full px-2 py-1.5 text-left font-mono text-[13px] hover:bg-paper"
+        >
+          {tag}
+        </button>
+      </li>)}
+    </ul>}
   </div>;
 }
 function Section({ title, children }: { title: string; children: ReactNode }) { return <section className="mb-4 text-[13px]"><h3 className="m-0 mb-2 text-[13px] font-semibold">{title}</h3>{children}</section>; }

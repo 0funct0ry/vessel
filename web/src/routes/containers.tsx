@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pause, Pencil, Play, RotateCw, Square, Trash2 } from "lucide-react";
 import { Can } from "../auth/Can";
 import { LogViewer } from "../components/containers/LogViewer";
+import { Stats } from "../components/containers/Stats";
 import { FileBrowser } from "../components/containers/FileBrowser";
 import type { ConsoleStatus } from "../components/containers/Console";
 import { CreateContainerModal } from "../components/containers/CreateContainerModal";
@@ -115,7 +116,7 @@ export function ContainerDetailPage() {
     {tab === "logs" && <LogViewer containerID={c.id} />}
     {tab === "files" && <FileBrowser containerID={c.id} />}
     {tab === "processes" && <Processes running={c.state === "running"} data={processes.data} loading={processes.isLoading} />}
-    {tab === "stats" && <EmptyState title="Stats is not built yet" action="The full stats experience has not shipped yet." />}
+    {tab === "stats" && <Stats containerID={c.id} running={c.state === "running"} cpus={c.resources.cpus} memoryLimit={c.resources.memory} />}
     {consoleOpened && <div hidden={tab !== "console"}>
       <Suspense fallback={<EmptyState title="Loading console" action="Fetching the terminal…" />}>
         <Console containerID={c.id} authOn={version.data?.auth_mode === "on"} onStatusChange={setConsoleStatus} />
