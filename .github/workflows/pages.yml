@@ -18,6 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -27,6 +31,17 @@ jobs:
           cd web-site
           npm ci
           npm run build
+
+      - name: Generate docs CLI reference and RBAC matrix
+        run: make docs-cli
+
+      - name: Build docs site
+        run: make docs-build
+
+      - name: Merge docs into the marketing site's Pages artifact
+        run: |
+          mkdir -p web-site/dist/vessel
+          cp -r docs/dist/. web-site/dist/vessel/
 
       - uses: actions/upload-pages-artifact@v3
         with:

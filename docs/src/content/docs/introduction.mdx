@@ -1,0 +1,26 @@
+---
+title: Introduction
+description: What Vessel is, and the three decisions that shape everything else about it.
+---
+
+By the end of this page you will know what Vessel is, the three decisions that shape it, and where to go to get it running.
+
+Vessel is a single-binary web UI for the Docker containers, images, volumes, and networks on **one host**. Drop the binary on a machine that runs Docker, start it, open a browser, and see and control everything on that host — containers, images, volumes, networks, events, and webhooks that turn events into signed HTTP calls.
+
+## Three decisions, on purpose
+
+Vessel is small by design, not by accident yet. Three choices explain almost everything about how it behaves:
+
+1. **One binary.** The React UI is embedded into the Go binary via `embed.FS` — there is no separate asset server, no sidecar process, nothing else to deploy or keep in sync. Copy one file to a host and run it.
+2. **CGO-free.** `CGO_ENABLED=0` end to end. SQLite support comes from `modernc.org/sqlite`, a pure-Go driver, specifically so the binary stays a static, cross-compilable artifact with no C toolchain dependency at build or run time.
+3. **No Docker SDK.** `internal/dockerapi` is an in-tree HTTP client built directly on `net/http`, talking to the Engine API over the socket or TCP. The official `docker/docker` module is deliberately not a dependency — Vessel only needs a small, stable slice of the Engine API surface, and vendoring the full SDK would pull in far more than that.
+
+Two more things worth knowing before you start:
+
+- **Works with no database.** Run `vessel serve` with no `--db` and everything works — users, webhooks, and delivery history are just ephemeral, and the startup banner says so out loud rather than hiding it.
+- **The Docker socket is root.** Anything that can reach Vessel's API can, transitively, do anything root can do on the host. Every default — binding to loopback only, refusing non-loopback binds without auth — follows from taking that seriously. See [Security model](/vessel/security-model/) for the details.
+
+## Where to go next
+
+- [Install](/vessel/install/) to get the binary, the install script, or the Docker image.
+- [Quick start](/vessel/quick-start/) to go from nothing to a running Vessel with a login and a webhook in about five minutes.

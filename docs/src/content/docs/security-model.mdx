@@ -1,0 +1,54 @@
+---
+title: Security model
+description: Why the bind guard exists, what "the Docker socket is root" means, and read-only mode.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+By the end of this page you will understand the one threat model Vessel is built around, and why several defaults that might look overcautious are deliberate.
+
+## The Docker socket is root
+
+Anything that can talk to the Docker Engine API — the socket Vessel proxies — can create a container that bind-mounts the host filesystem, run it as root, and read or write anything on the host. There is no meaningful distinction between "can reach the Docker socket" and "has root on this machine." Vessel's every other security decision follows from taking that literally, not from generic web-app hardening advice.
+
+## The bind guard
+
+`vessel serve` refuses to bind a non-loopback address without `--auth` — implemented as a small, pure, unit-tested function, `GuardBind(addr string, authOn bool, override bool) error` (`cmd/guard.go`), so the rule can't be accidentally bypassed by a code path that forgets to check it. The refusal exits with code 3 and prints both remedies inline:
+
+```text
+refusing to bind 0.0.0.0 without --auth
+Vessel proxies the Docker socket, which is equivalent to root on this host.
+Either bind loopback and use an SSH tunnel:
+  ssh -L 7373:127.0.0.1:7373 user@host
+or create a user and enable auth:
+  vessel user add admin --role admin --db vessel.db
+  vessel serve --db vessel.db --auth --addr 0.0.0.0
+Override at your own risk with --i-know-what-im-doing.
+```
+
+<Aside type="danger" title="This is a product feature, not a papercut">
+`--i-know-what-im-doing` exists for the rare case where you've already put something else in front of Vessel that enforces access control (and accept the risk of a misconfiguration there). It is not a general-purpose way around the guard, and should not be part of a normal deployment's flags.
+</Aside>
+
+`isLoopback` treats a bare host, a `host:port` pair, `localhost`, and any `unix://` or bare-path socket address as loopback — only a real non-loopback IP or hostname trips the guard.
+
+## Authentication is opt-in, then sticky
+
+`--auth` turns login on. It also turns on automatically the moment the store contains at least one user — see [Authentication and roles](/vessel/authentication-and-roles/#when-auth-is-required) — so a database that has ever had a user in it can't silently go passwordless on a later restart just because a flag was dropped.
+
+## Read-only mode
+
+`--read-only` makes every mutating route return `403` regardless of role, while every `GET` continues to work — a way to run an observation-only Vessel (dashboards, incident review) with zero risk of an accidental click doing something. It also disables the console, since an interactive shell is mutating in practice even though it isn't a `POST`.
+
+## RBAC enforcement
+
+Every route's minimum role is enforced centrally by `internal/auth`'s `Policies` table and `Allows`/`RequiredRole` — the router does not scatter per-handler role checks, so there is exactly one place that can be wrong. See [Authentication and roles](/vessel/authentication-and-roles/) for the full generated matrix.
+
+## No database, still secure
+
+Running with no `--db` does not weaken any of the above — the bind guard, RBAC, and read-only mode all apply identically. What you lose is persistence: users, webhooks, and delivery history are in-memory only, and the JWT signing key rotates on every restart, so long-lived sessions and configured webhooks don't survive a restart either. This is announced, not hidden, in the startup banner.
+
+## Next
+
+- [Troubleshooting](/vessel/troubleshooting/) for `GuardBindError`'s remedy text and the API error codes.
+- [Install](/vessel/install/#how-youll-reach-it) for the three ways to reach a loopback-bound Vessel safely.

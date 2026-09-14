@@ -1,0 +1,90 @@
+---
+title: Install
+description: Get the Vessel binary onto a host running Docker, and decide how you'll reach it.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+By the end of this page you will have the `vessel` binary on a machine that runs Docker, and know which of the three supported ways to reach it fits your setup.
+
+## Download the binary
+
+Grab the release for your platform from the [GitHub releases page](https://github.com/0funct0ry/vessel/releases). Vessel ships as a single static binary — no runtime dependencies beyond Docker itself.
+
+```sh
+curl -fsSL -o vessel https://github.com/0funct0ry/vessel/releases/latest/download/vessel-linux-amd64
+chmod +x vessel
+sudo mv vessel /usr/local/bin/vessel
+```
+
+Verify the download against the published checksums file before trusting it:
+
+```sh
+curl -fsSL -o vessel.sha256 https://github.com/0funct0ry/vessel/releases/latest/download/checksums.txt
+sha256sum --check --ignore-missing vessel.sha256
+```
+
+## install.sh
+
+A one-line installer detects your OS/arch and installs the matching release into `/usr/local/bin`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/0funct0ry/vessel/main/install.sh | sh
+```
+
+Read the script before piping it to `sh` if you'd rather not run something sight-unseen — that's a reasonable default, not a criticism.
+
+## Docker image
+
+Vessel also ships as a container image, for the case where "run Vessel next to Docker" is itself managed by Docker. This is the one arrangement where Vessel needs a mounted socket rather than a local one:
+
+```sh
+docker run -d \
+  --name vessel \
+  -p 127.0.0.1:7373:7373 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/0funct0ry/vessel:latest
+```
+
+Mounting the Docker socket into any container is equivalent to giving that container root on the host — see [Security model](/vessel/security-model/) before doing this on anything but a host you already trust with root access.
+
+## How you'll reach it
+
+Vessel binds `127.0.0.1` by default. Three ways to reach it beyond that, in the order to prefer them:
+
+<Tabs>
+<TabItem label="SSH tunnel">
+
+No new credentials, no extra port exposed on the host. This is the default recommendation.
+
+```sh
+# on your laptop
+ssh -L 7373:127.0.0.1:7373 you@shipyard-1
+# then open http://127.0.0.1:7373 locally
+```
+
+</TabItem>
+<TabItem label="Bind an interface">
+
+Binding a non-loopback address requires `--auth` — Vessel refuses otherwise (exit code 3). See [Quick start](/vessel/quick-start/) for the full flow.
+
+```sh
+vessel serve --db vessel.db --auth --addr 0.0.0.0
+```
+
+</TabItem>
+<TabItem label="Behind a proxy">
+
+Vessel stays bound to loopback; a reverse proxy (nginx, Caddy, Traefik) terminates TLS and forwards to it. Set `--base-path` to whatever path your proxy mounts Vessel under, so the embedded UI requests its own assets from the right place.
+
+```sh
+vessel serve --db vessel.db --auth --base-path /vessel
+```
+
+</TabItem>
+</Tabs>
+
+## Next
+
+- [Quick start](/vessel/quick-start/) — start Vessel, add a login, and fire your first webhook.
+- [Security model](/vessel/security-model/) — why the bind guard exists and what it protects.

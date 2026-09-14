@@ -1,0 +1,21 @@
+---
+title: Volumes and networks
+description: Create, inspect, and remove volumes and networks, including the protections on the defaults.
+---
+
+By the end of this page you will know how to create and remove volumes and networks from Vessel, and why the three default networks can't be deleted.
+
+## Volumes
+
+The volumes list shows name, driver, mountpoint, size when the engine reports it, and `used_by` chips linking to the containers currently mounting each one. Creating one (`POST /api/v1/volumes`, `operator`) takes a name, driver, and labels. Removing one that's in use is blocked with an explanation naming the containers holding it, rather than a bare Docker error. A volume detail page also has its own file browser (list, upload, download, rename, delete, clone) and an export-as-archive route, all `operator`-level, and gated by `--allow-exec` the same way the container file browser is.
+
+## Networks
+
+The networks list shows name, driver, scope, subnet, gateway, and attached containers with their IPs. Creating one (`POST /api/v1/networks`, `operator`) supports the bridge driver with an optional subnet and gateway, validated as CIDR client-side before submit so a malformed value never reaches the API. Connect and disconnect a specific container from the network's own detail page.
+
+Docker's three default networks — `bridge`, `host`, and `none` — are marked as such in the UI and their remove button is disabled with a reason shown, rather than hidden outright, so it's clear the option exists and why it isn't available here.
+
+## Next
+
+- [REST API reference](/vessel/rest-api/) for the exact routes.
+- [Containers](/vessel/containers/) for the container-side file browser these share a design with.

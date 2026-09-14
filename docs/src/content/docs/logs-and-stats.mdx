@@ -1,0 +1,25 @@
+---
+title: Logs and stats
+description: How log streaming and live resource stats reach the browser, and what to do when a stream stalls.
+---
+
+By the end of this page you will know how Vessel streams logs and stats to the browser, and why they use Server-Sent Events rather than a WebSocket.
+
+## Server-Sent Events
+
+`GET /api/v1/containers/:id/logs` and `GET /api/v1/containers/:id/stats` are both long-lived SSE streams, served through a shared helper (`internal/api/sse.go`) rather than each handler reimplementing chunked-response plumbing. SSE was chosen over a WebSocket for these because they're one-directional (server → browser only, no input to send back) and SSE gets you that with plain HTTP: it survives a reverse proxy and reconnects on its own if the connection drops, without extra client-side reconnect logic.
+
+Events (`GET /api/v1/events`) use the same mechanism, for the same reason — the dashboard's live event feed is exactly this kind of one-way stream.
+
+## Logs
+
+Follows the container's stdout/stderr from the point you opened the tab, interleaved and timestamped the way `docker logs -f --timestamps` would show them. Switching to a stopped container replays what's still retained by the engine rather than erroring.
+
+## Stats
+
+CPU, memory, network, and block I/O, sampled on the same cadence Docker's own stats API emits them (roughly once per second), rendered as the small rolling charts on the container detail page's **Stats** tab. Because it's SSE, a network blip just means a gap in the chart followed by a resumed stream, not a page reload.
+
+## Next
+
+- [Console](/vessel/console/) — the one interactive stream, which does use a WebSocket.
+- [Containers](/vessel/containers/) — the rest of the container detail page.

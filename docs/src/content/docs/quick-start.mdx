@@ -1,0 +1,102 @@
+---
+title: Quick start
+description: Start Vessel, keep its state across restarts, add a login, and fire your first webhook.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+By the end of this page you will have Vessel running against your Docker host, a login for yourself, and a webhook firing when a container stops.
+
+<Aside type="tip" title="Before you begin">
+You need Docker running locally and permission to read `/var/run/docker.sock` — usually membership of the `docker` group. Run `vessel doctor` if you are not sure.
+</Aside>
+
+## 1. Start Vessel
+
+No flags are required. Vessel binds loopback, finds the socket, and prints where it is listening.
+
+```sh
+$ vessel serve
+Vessel v0.1.0 — http://127.0.0.1:7373
+docker: unix:///var/run/docker.sock (auto-detected)
+store:  in-memory (no --db given; webhooks and users will not persist)
+auth:   off (loopback bind)
+```
+
+Open `http://127.0.0.1:7373`. You are looking at the containers on this host, live.
+
+<Aside type="caution" title="The banner is telling you two things">
+Nothing is being written to disk, and anyone who can reach this port can control Docker on this host — which is equivalent to root. Both change in the next two steps.
+</Aside>
+
+## 2. Keep state across restarts
+
+Pass `--db` to store users, webhooks, and delivery history in a SQLite file. The file is created and migrated on first use.
+
+```sh
+$ vessel serve --db /var/lib/vessel/vessel.db
+```
+
+Without `--db`, Vessel is fully functional but ephemeral: webhooks you create work until the process exits, and the JWT signing key is regenerated on every start, so every session ends with a restart.
+
+## 3. Add a login
+
+Create a user, then start with `--auth`. Auth is also enabled automatically whenever the database contains at least one user.
+
+```sh
+$ vessel user add anirban --role admin --db /var/lib/vessel/vessel.db
+Password: (not echoed)
+Confirm password:
+created user anirban
+
+$ vessel serve --db /var/lib/vessel/vessel.db --auth
+```
+
+| Role | Can do |
+| --- | --- |
+| `viewer` | Read everything, follow logs and stats |
+| `operator` | Everything a viewer can, plus lifecycle actions, image pull and tag, volume and network create, and the console |
+| `admin` | Everything an operator can, plus prune, image removal, users, and webhooks |
+
+See [Authentication and roles](/vessel/authentication-and-roles/) for the full, generated capability matrix.
+
+## 4. Reach it from your laptop
+
+See [Install](/vessel/install/#how-youll-reach-it) for the three supported ways — SSH tunnel, bind an interface, or behind a proxy.
+
+<Aside type="danger" title="Vessel refuses a non-loopback bind without --auth">
+Binding a non-loopback address with authentication off exits with code 3 and prints the two ways to fix it. This is deliberate and not configurable except with `--i-know-what-im-doing`.
+</Aside>
+
+## 5. Fire your first webhook
+
+Webhooks turn Docker events into signed HTTP POSTs. Create one from **Webhooks → Add webhook** in the UI, then stop a container and watch the delivery log.
+
+```sh
+$ docker stop redis
+```
+
+The body arrives like this:
+
+```json
+{
+  "type": "container.die",
+  "delivery_id": "dl_7c1e9ab24f01",
+  "created_at": "2026-09-07T10:14:22Z",
+  "host": { "name": "shipyard-1", "engine": "27.3.1" },
+  "container": {
+    "name": "redis",
+    "image": "redis:7.4-alpine",
+    "exit_code": 0
+  }
+}
+```
+
+Verify the `X-Vessel-Signature` header before trusting a payload — see [Webhooks](/vessel/webhooks/) for tested snippets in Go, Node, and Python.
+
+## What to read next
+
+- [Security model](/vessel/security-model/) — the bind guard, and what "the Docker socket is root" means in practice.
+- [Webhooks](/vessel/webhooks/) — the full event catalogue and payload schema.
+- [CLI reference](/vessel/cli-reference/) — every flag, generated from the binary.
+- [Troubleshooting](/vessel/troubleshooting/) — every error string, with its remedy.

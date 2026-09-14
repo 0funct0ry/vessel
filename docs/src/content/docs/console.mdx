@@ -1,0 +1,31 @@
+---
+title: Console
+description: The in-browser terminal, how it authenticates, and how to disable it entirely.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+By the end of this page you will know how the browser console reaches a container's shell, and how to turn it off if you don't want it available at all.
+
+## What it is
+
+The **Console** tab on a container detail page opens an interactive shell inside that container — an `xterm`-rendered terminal in the browser, backed by `GET /api/v1/containers/:id/exec` over a WebSocket (`coder/websocket`), running the same underlying exec facility as the file browser's directory operations.
+
+## Authentication
+
+A WebSocket upgrade can't carry a normal `Authorization` header, so the console authenticates differently from the rest of the API: the browser first calls `POST /api/v1/auth/ws-ticket` (an ordinary authenticated request) to mint a one-time ticket, then opens the WebSocket with that ticket in the query string. The ticket is consumed on first use and is meaningless afterward — inspecting network traffic for it after connection does not let you reconnect with it.
+
+## Turning it off
+
+`--allow-exec=false` removes the exec route from the router entirely — not merely hidden in the UI, genuinely unregistered, so there is no route for it to reach even with a valid session. This also disables the file browser's directory listing and folder creation (see [Containers](/vessel/containers/#files)), since both share the same exec facility; upload and download are unaffected, since those go through the archive endpoints instead.
+
+<Aside type="tip">
+`--allow-exec` is `true` by default. Set it `false` on a host where an interactive shell into any container is more access than you want to expose, even to authenticated operators.
+</Aside>
+
+`--read-only` also disables the console, since it rejects every mutating request, and an interactive shell is definitionally mutating even though it isn't a normal REST verb.
+
+## Next
+
+- [Authentication and roles](/vessel/authentication-and-roles/) — `containers.exec` requires `operator`.
+- [Security model](/vessel/security-model/) — read-only mode and the exec/allow-exec relationship.

@@ -35,6 +35,12 @@ Running vessel with no subcommand is a shortcut for "vessel serve".`,
 	SilenceErrors: true,
 }
 
+// RootCommand returns the root Cobra command tree. It exists so that
+// tooling outside this package (the docs CLI-reference generator, M23) can
+// walk the real command/flag definitions instead of hand-duplicating them —
+// the docs can't drift from the binary if they're generated from this.
+func RootCommand() *cobra.Command { return rootCmd }
+
 // Execute runs the root command. It is called once from main.go.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {

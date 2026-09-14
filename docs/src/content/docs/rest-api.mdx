@@ -1,0 +1,156 @@
+---
+title: REST API reference
+description: Every route in the v1 API, grouped by resource, with the method and path you'll actually call.
+---
+
+By the end of this page you will have the exact method and path for every route in Vessel's `/api/v1` surface, grouped the way the sidebar groups the product itself.
+
+All routes are mounted under `<base-path>/api/v1` — `<base-path>` is `""` unless `--base-path` is set to something other than `/`. Every response is a view type defined in `internal/api` — no raw Docker Engine structs are ever returned to the client. Errors share one envelope; see [Troubleshooting](/vessel/troubleshooting/) for every `code` value.
+
+## Auth
+
+| Method | Path |
+| --- | --- |
+| POST | `/auth/login` |
+| GET | `/auth/bootstrap` |
+| POST | `/auth/bootstrap` |
+| POST | `/auth/logout` |
+| GET | `/auth/me` |
+| POST | `/auth/ws-ticket` |
+
+## Host
+
+| Method | Path |
+| --- | --- |
+| GET | `/host` |
+| GET | `/host/next-port` |
+
+## Events
+
+| Method | Path |
+| --- | --- |
+| GET | `/events` |
+| DELETE | `/events` |
+| DELETE | `/events/:id` |
+
+## Containers
+
+| Method | Path |
+| --- | --- |
+| GET | `/containers` |
+| GET | `/containers/:id` |
+| GET | `/containers/:id/logs` |
+| GET | `/containers/:id/stats` |
+| GET | `/containers/:id/top` |
+| POST | `/containers` |
+| POST | `/containers/:id/commit` |
+| POST | `/containers/:id/recreate` |
+| POST | `/containers/:id/:action` (start/stop/restart/pause/unpause/kill/rename) |
+| GET | `/containers/:id/exec` (WebSocket; only registered when `--allow-exec`) |
+| GET | `/containers/:id/files` |
+| POST | `/containers/:id/files` |
+| GET | `/containers/:id/files/download` |
+| GET | `/containers/:id/files/view` |
+| PUT | `/containers/:id/files/content` |
+| POST | `/containers/:id/folders` |
+| DELETE | `/containers/:id/files` |
+| POST | `/containers/:id/files/rename` |
+| DELETE | `/containers/:id` |
+
+## Images
+
+| Method | Path |
+| --- | --- |
+| GET | `/images` |
+| GET | `/images/:id` |
+| GET | `/images/:id/history` |
+| GET | `/images/:id/dockerfile` |
+| GET | `/images/export` |
+| POST | `/images/import` |
+| POST | `/images/build` |
+| POST | `/images/pull` |
+| POST | `/images/:id/tag` |
+| DELETE | `/images/:id` |
+
+## Volumes
+
+| Method | Path |
+| --- | --- |
+| GET | `/volumes` |
+| POST | `/volumes` |
+| GET | `/volumes/:name` |
+| DELETE | `/volumes/:name` |
+| GET | `/volumes/:name/files` |
+| POST | `/volumes/:name/files` |
+| GET | `/volumes/:name/files/download` |
+| GET | `/volumes/:name/files/view` |
+| PUT | `/volumes/:name/files/content` |
+| POST | `/volumes/:name/folders` |
+| DELETE | `/volumes/:name/files` |
+| POST | `/volumes/:name/files/rename` |
+| POST | `/volumes/:name/clone` |
+| GET | `/volumes/:name/export` |
+
+## Networks
+
+| Method | Path |
+| --- | --- |
+| GET | `/networks` |
+| POST | `/networks` |
+| GET | `/networks/:id` |
+| DELETE | `/networks/:id` |
+| POST | `/networks/:id/connect` |
+| POST | `/networks/:id/disconnect` |
+
+## Stacks
+
+| Method | Path |
+| --- | --- |
+| GET | `/stacks` |
+| POST | `/stacks` |
+| POST | `/stacks/graph/to` |
+| POST | `/stacks/graph/from` |
+| GET | `/stacks/:name` |
+| PUT | `/stacks/:name` |
+| DELETE | `/stacks/:name` |
+| GET | `/stacks/:name/logs` |
+| POST | `/stacks/:name/up` |
+| POST | `/stacks/:name/down` |
+| POST | `/stacks/:name/redeploy` |
+
+## Prune
+
+| Method | Path |
+| --- | --- |
+| POST | `/prune/:kind` |
+
+## Webhooks & deliveries
+
+| Method | Path |
+| --- | --- |
+| GET | `/webhooks` |
+| POST | `/webhooks` |
+| GET | `/webhooks/:id` |
+| PATCH | `/webhooks/:id` |
+| DELETE | `/webhooks/:id` |
+| POST | `/webhooks/:id/test` |
+| GET | `/webhooks/:id/deliveries` |
+| POST | `/deliveries/:id/redeliver` |
+
+## Users & tokens
+
+| Method | Path |
+| --- | --- |
+| GET | `/users` |
+| POST | `/users` |
+| PATCH | `/users/:id` |
+| DELETE | `/users/:id` |
+| POST | `/users/:id/password` |
+| GET | `/tokens` |
+| POST | `/tokens` |
+| DELETE | `/tokens/:id` |
+
+## Next
+
+- [Authentication and roles](/vessel/authentication-and-roles/) for the required role on each of these.
+- [Troubleshooting](/vessel/troubleshooting/) for the error envelope shape and every `code` value.

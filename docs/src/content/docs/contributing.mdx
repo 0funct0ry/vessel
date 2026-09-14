@@ -1,0 +1,52 @@
+---
+title: Contributing
+description: Build, test, and lint commands, the milestone convention, and the approved-dependency list.
+---
+
+By the end of this page you will be able to build, test, and lint Vessel locally, and know the two rules that keep the codebase and its docs from drifting apart.
+
+## Commands
+
+```sh
+make dev      # air + vite dev server, API proxied at :7373
+make build    # vite build -> web/dist, then CGO_ENABLED=0 go build -tags embed
+make test     # go test ./... && vitest run
+make lint     # golangci-lint, tsc --noEmit, eslint
+```
+
+This docs site is a separate, additive target, not part of the product build:
+
+```sh
+make docs-cli     # regenerate the CLI reference and RBAC matrix from source
+make docs-verify  # execute every verified code block against real fixtures
+make docs-build   # cd docs && npm ci && npm run build
+```
+
+Run a single Go test: `go test ./internal/dockerapi/... -run TestName -v`.
+
+## Milestone convention
+
+Every milestone has a stable ID (`M1`, `M2`, … `M23`), referenced in commit subjects: `M3: list-only REST surface for containers`. `internal-docs/PROMPTS.md` has one self-contained build prompt per milestone, in dependency order — read it before starting a new one, and read `internal-docs/SPEC.md` as the tie-breaker whenever the two disagree.
+
+Every milestone should end green: `make build && make test && make lint`. Don't scaffold ahead — implement the file the current milestone needs, not a file a later milestone might need.
+
+## Approved dependencies
+
+Go: `spf13/cobra`, `spf13/viper`, `gin-gonic/gin`, `modernc.org/sqlite`, `golang-jwt/jwt/v5`, `golang.org/x/crypto/bcrypt`, `coder/websocket`, `oklog/ulid/v2`. Anything else needs an argument in the commit body — including this docs site's own `astro`/`@astrojs/starlight`, whose justification is simply that they're the stack this milestone explicitly names.
+
+Frontend (product UI): `react`, `react-router-dom`, `@tanstack/react-query`, `tailwindcss`, `xterm`, `lucide-react`.
+
+`CGO_ENABLED=0` throughout — SQLite support is `modernc.org/sqlite`, a pure-Go driver, specifically so the binary stays a static, cross-compilable artifact.
+
+## Docs stay honest
+
+Three rules keep this site itself from drifting from the binary it documents:
+
+1. The [CLI reference](/vessel/cli-reference/) and the [RBAC matrix](/vessel/authentication-and-roles/#full-route--role-matrix) are generated from `cmd`'s Cobra tree and `internal/auth.Policies` by `make docs-cli` — never hand-edited.
+2. Every webhook signature snippet is executed against the real fixture and compared byte-for-byte with `internal/webhook/signature.go`'s own output by `make docs-verify`.
+3. No screenshots of anything that doesn't exist yet, and every page opens with one sentence stating what you'll be able to do once you've read it.
+
+## Next
+
+- [CLI reference](/vessel/cli-reference/) — see the generator's output.
+- [Webhooks](/vessel/webhooks/#verifying-the-signature) — see the verified snippets.

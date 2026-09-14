@@ -1,0 +1,213 @@
+---
+title: Webhooks
+description: The event catalogue, filter syntax, payload schema, and tested signature-verification snippets in Go, Node, and Python.
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+By the end of this page you will know which events Vessel can dispatch, what the payload looks like, and how to verify — with tested, copy-pasteable code — that a request really came from your Vessel.
+
+## Event types
+
+Docker events are normalised to `<resource>.<action>`. Subscribe to exact names, to `container.*`, or to `*`.
+
+| Type | Fires when |
+| --- | --- |
+| `container.create` | A container is created but not yet started |
+| `container.start` | A container starts |
+| `container.die` | The main process exits. Carries `exit_code` |
+| `container.kill` | A signal is delivered |
+| `container.pause` / `container.unpause` | Container is paused or resumed |
+| `container.destroy` | A container is removed |
+| `image.pull` | An image finishes pulling |
+| `volume.create` / `volume.destroy` | Volume lifecycle |
+| `network.connect` / `network.disconnect` | A container joins or leaves a network |
+
+## Filters
+
+Filters are combined with AND. An empty filter matches everything. (`internal/webhook/matcher.go`)
+
+| Filter | Example | Matches |
+| --- | --- | --- |
+| `name` | `worker-*` | Glob against the container name |
+| `image` | `ghcr.io/acme/*` | Glob against the image reference |
+| `label` | `{"com.docker.compose.project":"acme"}` | All key/value pairs must be present |
+
+## Payload schema
+
+Every delivery body has this shape (`internal/webhook/payload.go`'s `Payload`):
+
+```json
+{
+  "id": "ev_...",
+  "delivery_id": "dl_7c1e9ab24f01",
+  "webhook_id": "wh_...",
+  "type": "container.die",
+  "created_at": "2026-09-07T10:14:22Z",
+  "host": { "name": "shipyard-1", "engine": "27.3.1" },
+  "container": {
+    "id": "3f2a...",
+    "name": "redis",
+    "image": "redis:7.4-alpine",
+    "exit_code": 0,
+    "labels": { "com.docker.compose.project": "acme" }
+  },
+  "raw": { "...": "the raw Docker Engine event, unmodified" }
+}
+```
+
+`container` is present only for container-scoped events; `exit_code` only when the underlying Docker event actor carried one. `raw` is the untouched Engine API event, for anything the typed fields above don't cover.
+
+## Headers sent with every delivery
+
+| Header | Value |
+| --- | --- |
+| `Content-Type` | `application/json` |
+| `User-Agent` | `vessel/<version>` |
+| `X-Vessel-Event` | The payload's `type` |
+| `X-Vessel-Delivery` | The delivery ID |
+| `X-Vessel-Webhook` | The webhook ID |
+| `X-Vessel-Signature` | `t=<unix>,v1=<hex>` — present only when the webhook has a secret set |
+
+Custom headers you configure are also sent, except any that collide with the reserved `X-Vessel-*` names or `User-Agent`, which the API rejects at save time with `400 reserved_header`.
+
+## Verifying the signature
+
+`X-Vessel-Signature` is `t=<unix>,v1=<hex>`, where `<hex>` is `hex(HMAC-SHA256(secret, "<t>." + <raw body>))` — computed by `internal/webhook/signature.go`'s `Signature` function. Reject requests where `t` is more than five minutes old, to bound replay of a captured request.
+
+<Aside type="danger" title="Sign the raw bytes, not a re-serialized JSON object">
+Compute the HMAC over the exact bytes Vessel sent, before any JSON parsing — re-encoding the body (different key order, different whitespace) will not reproduce the same signature even though the data is "the same".
+</Aside>
+
+Each of the three snippets below is a standalone script, verified against the exact algorithm in `signature.go` by `make docs-verify` (see `scripts/docs-verify.sh`) — all three are asserted to produce the identical `v1=` value for one fixed fixture.
+
+<Tabs>
+<TabItem label="Go">
+
+```go
+// verify.go
+package main
+
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"strings"
+)
+
+// verify reports whether header (the exact X-Vessel-Signature value) is a
+// valid signature over body for secret, per internal/webhook/signature.go.
+func verify(header, body, secret string) bool {
+	t, v1, ok := parseHeader(header)
+	if !ok {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(t + "." + body))
+	want := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(want), []byte(v1))
+}
+
+func parseHeader(header string) (t, v1 string, ok bool) {
+	for _, part := range strings.Split(header, ",") {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		switch kv[0] {
+		case "t":
+			t = kv[1]
+		case "v1":
+			v1 = kv[1]
+		}
+	}
+	return t, v1, t != "" && v1 != ""
+}
+
+func main() {
+	// Usage: verify <secret> <raw-body> <X-Vessel-Signature header value>
+	secret := os.Args[1]
+	body := os.Args[2]
+	header := os.Args[3]
+	if verify(header, body, secret) {
+		fmt.Println("ok: signature valid")
+		os.Exit(0)
+	}
+	fmt.Println("signature invalid")
+	os.Exit(1)
+}
+```
+
+</TabItem>
+<TabItem label="Node">
+
+```js
+// verify.js
+const crypto = require('crypto');
+
+function verify(header, rawBody, secret) {
+  const t = header.match(/t=([^,]+)/)[1];
+  const v1 = header.match(/v1=([0-9a-f]+)/)[1];
+  const want = crypto
+    .createHmac('sha256', secret)
+    .update(`${t}.${rawBody}`)
+    .digest('hex');
+  const a = Buffer.from(want, 'hex');
+  const b = Buffer.from(v1, 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+const [, , secret, rawBody, header] = process.argv;
+if (verify(header, rawBody, secret)) {
+  console.log('ok: signature valid');
+  process.exit(0);
+}
+console.log('signature invalid');
+process.exit(1);
+```
+
+</TabItem>
+<TabItem label="Python">
+
+```py
+# verify.py
+import hmac
+import hashlib
+import sys
+
+def verify(header: str, raw_body: str, secret: str) -> bool:
+    parts = dict(p.split("=", 1) for p in header.split(","))
+    t, v1 = parts["t"], parts["v1"]
+    want = hmac.new(secret.encode(), f"{t}.{raw_body}".encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(want, v1)
+
+if __name__ == "__main__":
+    secret, raw_body, header = sys.argv[1], sys.argv[2], sys.argv[3]
+    if verify(header, raw_body, secret):
+        print("ok: signature valid")
+        sys.exit(0)
+    print("signature invalid")
+    sys.exit(1)
+```
+
+</TabItem>
+</Tabs>
+
+## Retries
+
+A delivery is successful on any 2xx response. Anything else is retried at 1s, 5s, 25s, 2m, and 10m with ±20% jitter, then marked `dead` (`internal/webhook/sender.go`'s `retryDelays`). Redirects are not followed and each attempt times out after 10 seconds.
+
+<Aside type="caution" title="Retry state needs --db">
+Without a database, pending retries are lost on restart and only the last 200 deliveries per webhook are kept in memory.
+</Aside>
+
+## Why webhooks are admin-only
+
+Vessel will POST to any URL you configure, from inside your network — that makes creating a webhook a server-side request forgery primitive, so it requires `admin` even though reading deliveries would otherwise be harmless on its own. Secrets are write-only: the API reports `secret_set: true` and never returns the value, even to an admin who created it.
+
+## Next
+
+- [REST API reference](/vessel/rest-api/) for the `webhooks` and `deliveries` routes.
+- [Quick start](/vessel/quick-start/#5-fire-your-first-webhook) to fire one end to end.

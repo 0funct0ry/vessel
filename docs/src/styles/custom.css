@@ -1,0 +1,172 @@
+/*
+ * Theme for the Vessel docs site, matching internal-docs/DOCS-MOCKUP.html
+ * exactly: palette, fonts, density. Starlight's CSS variables are
+ * re-pointed at the mockup's tokens rather than inventing new ones; the
+ * built-in :::tip / :::caution / :::danger asides are re-skinned to match
+ * the mockup's .tip / .warn / .danger callouts instead of building custom
+ * components.
+ */
+
+@font-face {
+  font-family: 'Archivo';
+  src: url('../fonts/archivo-variable.woff2') format('woff2-variations');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('../fonts/plexmono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('../fonts/plexmono-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Mockup palette (internal-docs/DOCS-MOCKUP.html) */
+  --vessel-ink: #0b1f2a;
+  --vessel-hull: #12303f;
+  --vessel-steel: #24505f;
+  --vessel-paper: #edf1f0;
+  --vessel-panel: #ffffff;
+  --vessel-line: #cbd8d6;
+  --vessel-line-soft: #e1e8e7;
+  --vessel-text: #12303f;
+  --vessel-muted: #5c7480;
+  --vessel-run: #1f7a5c;
+  --vessel-pause: #c8860d;
+  --vessel-fail: #b7362a;
+  --vessel-link: #1f5e7e;
+
+  --sl-font: 'Archivo', system-ui, sans-serif;
+  --sl-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* Starlight light-mode palette */
+  --sl-color-white: var(--vessel-panel);
+  --sl-color-black: var(--vessel-ink);
+  --sl-color-text: var(--vessel-text);
+  --sl-color-text-accent: var(--vessel-hull);
+  --sl-color-bg: var(--vessel-panel);
+  --sl-color-bg-nav: var(--vessel-ink);
+  --sl-color-bg-sidebar: var(--vessel-panel);
+  --sl-color-bg-inline-code: #e9eeed;
+  --sl-color-hairline: var(--vessel-line);
+  --sl-color-hairline-light: var(--vessel-line-soft);
+  --sl-color-hairline-shade: var(--vessel-line);
+  --sl-color-accent: var(--vessel-hull);
+  --sl-color-accent-high: var(--vessel-hull);
+  --sl-color-accent-low: #dfe9e6;
+  --sl-color-gray-1: var(--vessel-text);
+  --sl-color-gray-2: var(--vessel-steel);
+  --sl-color-gray-3: var(--vessel-muted);
+  --sl-color-gray-6: var(--vessel-paper);
+}
+
+/* Dark mode: the mockup itself is a single light theme, but Starlight
+   ships dark by default, so give it a dark reading of the same palette
+   rather than fighting the toggle. */
+:root[data-theme='dark'] {
+  --sl-color-bg: var(--vessel-ink);
+  --sl-color-bg-nav: var(--vessel-ink);
+  --sl-color-bg-sidebar: #0e2530;
+  --sl-color-text: #cbdce3;
+  --sl-color-text-accent: #8fc7da;
+  --sl-color-bg-inline-code: #16323f;
+  --sl-color-hairline: #24505f;
+  --sl-color-hairline-light: #1b3b48;
+  --sl-color-accent: #7fd1ae;
+  --sl-color-accent-high: #cbdce3;
+  --sl-color-accent-low: #12303f;
+  --sl-color-gray-1: #cbdce3;
+  --sl-color-gray-2: #a9c2cc;
+  --sl-color-gray-3: #7f9ba6;
+  --sl-color-gray-6: #0e2530;
+}
+
+body {
+  font-size: 15.5px;
+  line-height: 1.65;
+}
+
+/* Top nav reads exactly like the mockup's dark bar with a version badge. */
+.header {
+  background-color: var(--vessel-ink) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+.site-title {
+  font-weight: 600;
+}
+
+/* Sidebar active-item bar, matching aside a.on in the mockup. */
+starlight-sidebar-topics-list a[aria-current='page'],
+.sidebar-content a[aria-current='page'] {
+  box-shadow: inset 2px 0 0 var(--vessel-hull);
+  font-weight: 600;
+}
+
+h1 {
+  letter-spacing: -0.025em;
+  font-weight: 600;
+}
+h2 {
+  letter-spacing: -0.015em;
+  font-weight: 600;
+}
+
+/* Code blocks: dark ink background regardless of site theme, matching the
+   mockup's pre{background:var(--ink)}. */
+.expressive-code,
+.expressive-code pre {
+  --ec-brdRad: 4px;
+}
+.expressive-code pre {
+  background-color: var(--vessel-ink) !important;
+}
+
+table {
+  border: 1px solid var(--vessel-line);
+  border-radius: 4px;
+}
+thead th {
+  background: #f6f8f8;
+  font-size: 13px;
+}
+:root[data-theme='dark'] thead th {
+  background: #0e2530;
+}
+
+/* Re-skin Starlight's built-in asides onto the mockup's callout colors. */
+starlight-aside.tip,
+.starlight-aside--tip {
+  --sl-color-asides-text-accent: var(--vessel-run);
+  border-inline-start-color: var(--vessel-run) !important;
+  background: #f2f8f5;
+}
+starlight-aside.caution,
+.starlight-aside--caution {
+  --sl-color-asides-text-accent: var(--vessel-pause);
+  border-inline-start-color: var(--vessel-pause) !important;
+  background: #fdf8ec;
+}
+starlight-aside.danger,
+.starlight-aside--danger {
+  --sl-color-asides-text-accent: var(--vessel-fail);
+  border-inline-start-color: var(--vessel-fail) !important;
+  background: #fdf4f3;
+}
+:root[data-theme='dark'] .starlight-aside--tip {
+  background: #12251f;
+}
+:root[data-theme='dark'] .starlight-aside--caution {
+  background: #2a2013;
+}
+:root[data-theme='dark'] .starlight-aside--danger {
+  background: #2a1613;
+}

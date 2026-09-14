@@ -36,4 +36,8 @@ bin/
 .claude/
 web/dist/
 web/node_modules/
+docs/dist/
+docs/node_modules/
+docs/.astro/
+scripts/.docs-verify-tmp/
 

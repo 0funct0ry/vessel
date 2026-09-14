@@ -1,0 +1,41 @@
+---
+title: Containers
+description: Lifecycle actions, the in-browser file browser, commit-to-image, and recreate-in-place.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+By the end of this page you will know every action available on a container, what each one requires, and what "recreate in place" actually does under the hood.
+
+## Lifecycle
+
+Start, stop, restart, pause/unpause, kill, and rename are all `operator`-level actions, each a single `POST /api/v1/containers/:id/<action>`. Remove (`DELETE /api/v1/containers/:id`) is also `operator` — Vessel does not require `admin` for destructive actions on containers themselves, only for host-wide operations like prune.
+
+## Files
+
+The container detail page's **Files** tab lists a directory inside the container's filesystem, lets you upload into it, create folders, rename, delete, and download individual files or a whole directory as an archive. Listing, folder creation, rename, and delete all go through the container's `exec` facility internally, so they respect `--allow-exec`:
+
+<Aside type="caution" title="allow-exec asymmetry">
+`--allow-exec=false` disables directory listing and folder creation (both go through exec), but **leaves upload and download available**, since those use the archive endpoints directly rather than exec. This is easy to miss — plan around it if you're locking a deployment down.
+</Aside>
+
+A stopped container returns `409 container_not_running` for file operations that need a live process to run through.
+
+## Commit to image
+
+**Commit to image** (`POST /api/v1/containers/:id/commit`) snapshots a container's current filesystem as a new image — Docker's own `docker commit`, exposed as `operator`-level rather than `admin`, since it's closer to "create an image" (already operator-level via pull/build) than to a destructive action. `pause` defaults to `true`: committing a running container without pausing it can capture a filesystem mid-write, so the UI discourages unchecking it rather than silently allowing it.
+
+## Recreate in place
+
+**Recreate** (`POST /api/v1/containers/:id/recreate`) removes a container and creates a fresh one with the same name and an updated image or config — the common "pull a new tag, keep the name and volumes" workflow, done atomically from the UI's point of view. If the replacement fails to start after the original is already gone, the API returns `409 recreate_failed` naming the now-free container name so you can react rather than being left in an ambiguous state.
+
+## Processes and reconstructed Dockerfile
+
+The **Processes** tab is `docker top`, verbatim — Docker's own column titles (`UID`, `PID`, `PPID`, …) as the table headers, polling on a short interval rather than streaming, since it's a point-in-time snapshot, not an event stream. It's only available for running containers.
+
+The image detail page's **Dockerfile** tab is a best-effort reconstruction from image history and inspect data — Docker does not store the original Dockerfile, so this is always labeled `approximate: true` and shown under a persistent banner saying so, never presented as the real source.
+
+## Next
+
+- [Logs and stats](/vessel/logs-and-stats/) for the other two container detail tabs.
+- [Console](/vessel/console/) for the interactive shell.

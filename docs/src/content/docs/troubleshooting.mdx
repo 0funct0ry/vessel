@@ -1,0 +1,96 @@
+---
+title: Troubleshooting
+description: Every user-facing error string in the binary, with its remedy.
+---
+
+By the end of this page you will be able to look up any error Vessel prints — from the CLI or from the API — and find the fix, without reading the source.
+
+## CLI exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Clean shutdown |
+| `1` | Runtime error, described on stderr |
+| `2` | Usage error, including a command that requires `--db` |
+| `3` | Refused to bind a non-loopback address without authentication |
+
+## Bind guard (`cmd/guard.go`)
+
+**`refusing to bind <addr> without --auth`** (exit 3) — Vessel proxies the Docker socket, which is root-equivalent, and refuses to expose that past loopback without authentication.
+
+Remedy — one of:
+```sh
+ssh -L 7373:127.0.0.1:7373 user@host
+```
+or
+```sh
+vessel user add admin --role admin --db vessel.db
+vessel serve --db vessel.db --auth --addr 0.0.0.0
+```
+or, accepting the risk yourself, add `--i-know-what-im-doing`.
+
+## No database (`cmd/user.go`, `cmd/migrate.go`)
+
+**`no --db given: users are ephemeral, add them at runtime instead`** (exit 2) — `vessel user`, `vessel webhook`, and `vessel migrate` all need a SQLite file to act on; there's nowhere to persist a user or a schema migration without one.
+
+Remedy: pass `--db /path/to/vessel.db` (created if it doesn't exist).
+
+## Config validation (`cmd/config.go`)
+
+| Error | Remedy |
+| --- | --- |
+| `invalid --port <n>: must be between 1 and 65535` | Pick a valid TCP port. |
+| `invalid --log-level <x>: must be one of debug\|info\|warn\|error` | Use one of the four listed levels. |
+| `invalid --jwt-ttl <x>: <parse error>` | Use a Go duration like `24h`, `30m`, `90s`. |
+| `invalid --jwt-ttl <x>: must be positive` | A zero or negative TTL can't issue a usable token. |
+| `invalid --addr: must not be empty` | Pass a bind address, or leave the flag unset for the `127.0.0.1` default. |
+
+## Doctor (`cmd/doctor.go`)
+
+`vessel doctor` diagnoses Docker connectivity and prints a remedy inline for each failure it finds:
+
+| Condition | Remedy printed |
+| --- | --- |
+| Socket path doesn't exist | "is the Docker daemon running, and does this path match its socket?" |
+| Socket exists but isn't a socket file | (reported, no remedy needed — the path is simply wrong) |
+| Socket exists but isn't accessible | "is this user in the docker group? try: `sudo usermod -aG docker $USER`" |
+| Engine unreachable (`dockerapi.ErrUnreachable`) | "is the Docker daemon running and is `--docker-host` correct?" |
+| Engine returned a non-2xx HTTP status | "engine returned HTTP `<status>` — check the daemon logs" |
+| Any other dial/ping/version error | "check `--docker-host` and that the Docker daemon is running" |
+
+Run `vessel doctor` any time something upstream of the API — not the API itself — seems wrong; it never touches auth or the store, only the Docker connection.
+
+## API error codes (`internal/api/errors.go`)
+
+Every API error shares one envelope:
+
+```json
+{ "error": { "code": "docker_unreachable", "message": "Docker Engine is unreachable" } }
+```
+
+| HTTP | `code` | Meaning | Remedy |
+| --- | --- | --- | --- |
+| 400 | `invalid_request` | Generic request validation failure | Fix the field named in `message`. |
+| 400 | `invalid_name` | A name failed Vessel's naming rules | Use a name matching Docker's own naming constraints. |
+| 400 | `invalid_image_reference` | Malformed image repo:tag | Check the reference against Docker's tag grammar. |
+| 400 | `invalid_path` | A file-browser path escaped its root or was malformed | Use a path inside the container/volume's own filesystem. |
+| 400 | `build_context_too_large` | Build context exceeds 200 MiB | Trim the build context or use a `.dockerignore`. |
+| 400 | `invalid_query` | A query parameter failed validation | Check the query string against the route's documented parameters. |
+| 400 | `reserved_header` | A webhook's custom header collided with `X-Vessel-*`/`User-Agent` | Rename the header. |
+| 403 | (read-only) | Mutating request while `--read-only` is set | Restart without `--read-only`, or use a different Vessel instance. |
+| 404 | `not_found` | Store-backed resource (user, webhook, token, delivery) not found | Check the ID. |
+| 404 | `<resource>_not_found` | Docker resource (e.g. `container_not_found`) not found | Check the ID/name; it may have been removed already. |
+| 404 | `docker_not_found` | Docker returned 404 without a typed resource wrapper | Check the ID/name. |
+| 409 | `already_exists` | A store record with that name already exists | Use a different name, or update the existing record instead. |
+| 409 | `already_in_state` | Docker rejected the action because the resource is already in that state | Check current state before retrying (e.g. don't start an already-running container). |
+| 409 | `container_not_running` | Action needs a running container (exec-backed file ops, top) | Start the container first. |
+| 409 | `last_admin` | Attempt to remove or demote the only remaining admin | Promote another user to admin first. |
+| 409 | `recreate_failed` | Recreate removed the old container but the replacement failed to start | The freed name is in `freed_name`; investigate the image/config, then create manually. |
+| 502 | `docker_error` | Docker Engine returned an error Vessel didn't recognize as one of the above | Check `message` and the Docker daemon logs. |
+| 503 | `docker_unreachable` | Vessel can't reach the Docker Engine API at all | Run `vessel doctor`. |
+| 500 | `internal_error` | Unclassified internal error | Check the server logs; please file an issue with the request and response. |
+
+## Next
+
+- [Security model](/vessel/security-model/) for why the bind guard specifically is not configurable away.
+- [Configuration](/vessel/configuration/) for the full flag list these validations apply to.

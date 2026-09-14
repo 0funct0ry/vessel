@@ -1,4 +1,4 @@
-.PHONY: dev build test lint fmt clean web-build check-bundle-size check-standalone site
+.PHONY: dev build test lint fmt clean web-build check-bundle-size check-standalone site docs-cli docs-verify docs-build
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -36,6 +36,17 @@ fmt:
 
 site:
 	cd web-site && npm ci && npm run build
+
+# docs/ is a separate deployable (see internal-docs/PROMPTS.md M23) and is
+# deliberately not folded into build/test above.
+docs-cli:
+	go run scripts/gen-docs.go
+
+docs-verify:
+	./scripts/docs-verify.sh
+
+docs-build:
+	cd docs && npm ci && npm run build
 
 clean:
 	rm -rf bin web/dist web-site/dist

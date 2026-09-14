@@ -32,6 +32,30 @@ jobs:
         with:
           version: latest
 
+  docs-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: docs-cli is up to date
+        run: |
+          make docs-cli
+          git diff --exit-code -- docs/src/content/docs/cli-reference.mdx docs/src/content/docs/configuration.mdx docs/src/content/docs/authentication-and-roles.mdx
+
+      - name: docs-verify (webhook signature snippets)
+        run: make docs-verify
+
+      - name: docs-build
+        run: make docs-build
+
   e2e-smoke:
     runs-on: ubuntu-latest
     needs: build-test-lint
